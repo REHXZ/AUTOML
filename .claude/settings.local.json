@@ -13,7 +13,8 @@
       "Bash(python -c \"import pandas; print\\(pandas.__version__\\)\")",
       "Bash(python -c \"import ast; import app; print\\('app.py imports OK'\\)\")",
       "Bash(python -c \"import kaleido; print\\('kaleido', kaleido.__version__\\)\")",
-      "Bash(python -c \"from aiml_discovery.ai_autopilot import AiAutopilot, AutopilotStep, _fig_to_base64; import plotly.express as px; fig = px.histogram\\(x=[1,2,3,4,5]\\); result = _fig_to_base64\\(fig\\); print\\('PNG render:', 'OK' if result else 'FALLBACK \\(no kaleido\\)'\\)\")"
+      "Bash(python -c \"from aiml_discovery.ai_autopilot import AiAutopilot, AutopilotStep, _fig_to_base64; import plotly.express as px; fig = px.histogram\\(x=[1,2,3,4,5]\\); result = _fig_to_base64\\(fig\\); print\\('PNG render:', 'OK' if result else 'FALLBACK \\(no kaleido\\)'\\)\")",
+      "Bash(python -c ' *)"
     ]
   }
 }

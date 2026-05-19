@@ -7,6 +7,9 @@ from typing import Any
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()  # reads OPENAI_API_KEY (and others) from .env
 
 from aiml_discovery.ai_autopilot import AiAutopilot, AutopilotStep
 from aiml_discovery.config import APP_NAME, PROJECT_HOME, UPLOAD_TYPES
@@ -469,38 +472,239 @@ def _metric_value(value: Any) -> str:
 
 def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
     st.subheader("AI Autopilot")
-    st.caption("Let GPT-4o analyse your data, devise a strategy, and execute training automatically.")
+    st.caption(
+        "The AI profiles your data, asks you questions, explores multiple strategies, "
+        "creates charts, and trains models — with you in the loop at every key decision."
+    )
 
+    # ── API key (from .env or manual entry) ─────────────────────────────
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if api_key:
-        st.success("OpenAI API key loaded from environment variable.")
+        st.success("OpenAI API key loaded from .env")
     else:
         api_key = st.text_input(
             "OpenAI API Key",
             type="password",
-            placeholder="sk-...",
-            help="Set OPENAI_API_KEY env var to avoid entering it here.",
+            placeholder="sk-... (or add OPENAI_API_KEY to .env)",
         )
 
     datasets = store.list_datasets(project.id)
     if not datasets:
-        st.info("No data sources found. Upload at least one dataset in 'Data Sources' first.")
+        st.info("Upload at least one dataset in 'Data Sources' first.")
         return
 
-    st.info(f"{len(datasets)} dataset(s) available for analysis.")
+    # ── Reset if the user switched to a different project ───────────────
+    saved_pid = st.session_state.get("ap_project_id")
+    if saved_pid and saved_pid != project.id:
+        _reset_autopilot()
 
-    if not st.button("Launch AI Analysis", type="primary", disabled=not api_key):
-        return
+    # ── Phase state machine ──────────────────────────────────────────────
+    phase = st.session_state.get("ap_phase", "idle")
 
-    autopilot = AiAutopilot(api_key, project.id, store)
+    if phase != "idle":
+        if st.button("↺ Start Over", key="ap_reset"):
+            _reset_autopilot()
+            st.rerun()
+        st.divider()
 
-    try:
-        with st.status("AI is analysing your data...", expanded=True) as status:
-            for step in autopilot.run():
-                _render_autopilot_step(step)
-            status.update(label="Analysis complete!", state="complete", expanded=True)
-    except Exception as exc:
-        st.error(f"AI Autopilot error: {exc}")
+    # ════════════════════════════════════════════════════════════════════
+    # IDLE — launch form
+    # ════════════════════════════════════════════════════════════════════
+    if phase == "idle":
+        st.info(f"{len(datasets)} dataset(s) available.")
+        goal = st.text_area(
+            "Your goal (optional — the AI will also ask you questions):",
+            height=80,
+            placeholder="e.g. Predict customer churn | Understand what drives revenue | …",
+        )
+        if st.button("Launch AI Analysis", type="primary", disabled=not api_key):
+            autopilot = AiAutopilot(api_key, project.id, store, user_goal=goal.strip())
+            st.session_state["ap"] = autopilot
+            st.session_state["ap_gen"] = autopilot.run()
+            st.session_state["ap_steps"] = []
+            st.session_state["ap_phase"] = "running"
+            st.session_state["ap_pending"] = None
+            st.session_state["ap_pending_answers"] = None
+            st.session_state["ap_project_id"] = project.id
+            st.rerun()
+
+    # ════════════════════════════════════════════════════════════════════
+    # RUNNING — consume the generator live
+    # ════════════════════════════════════════════════════════════════════
+    elif phase == "running":
+        gen = st.session_state["ap_gen"]
+        old_steps: list[AutopilotStep] = st.session_state.get("ap_steps", [])
+        pending_answers: list[str] | None = st.session_state.pop("ap_pending_answers", None)
+
+        # Collapsed history of steps completed before this run
+        if old_steps:
+            with st.expander(f"Previous activity — {len(old_steps)} step(s)", expanded=False):
+                for s in old_steps:
+                    _render_step_compact(s)
+
+        new_steps: list[AutopilotStep] = []
+        next_phase = "done"
+
+        try:
+            with st.status("AI is working…", expanded=True) as status:
+                # If resuming from a pause, send the answers first
+                if pending_answers is not None:
+                    try:
+                        first = gen.send(pending_answers)
+                        new_steps.append(first)
+                        _render_autopilot_step(first)
+                        if first.kind == "ask":
+                            st.session_state["ap_pending"] = first.data
+                            next_phase = "asking"
+                            status.update(label="Waiting for your answers…", state="running")
+                    except StopIteration:
+                        next_phase = "done"
+
+                # Continue consuming until done or ask_user
+                if next_phase not in ("asking",):
+                    for step in gen:
+                        new_steps.append(step)
+                        _render_autopilot_step(step)
+                        if step.kind == "ask":
+                            st.session_state["ap_pending"] = step.data
+                            next_phase = "asking"
+                            status.update(label="Waiting for your answers…", state="running")
+                            break
+                    else:
+                        status.update(label="Analysis complete!", state="complete")
+
+        except Exception as exc:
+            st.error(f"AI Autopilot error: {exc}")
+            next_phase = "done"
+
+        st.session_state["ap_steps"] = old_steps + new_steps
+        st.session_state["ap_phase"] = next_phase
+
+        if next_phase == "asking":
+            st.rerun()
+        elif next_phase == "done":
+            _render_autopilot_results(st.session_state.get("ap"))
+
+    # ════════════════════════════════════════════════════════════════════
+    # ASKING — show question form, wait for user answers
+    # ════════════════════════════════════════════════════════════════════
+    elif phase == "asking":
+        old_steps = st.session_state.get("ap_steps", [])
+        pending: dict = st.session_state.get("ap_pending") or {}
+        questions: list[str] = pending.get("questions", [])
+
+        if old_steps:
+            with st.expander(f"Activity so far — {len(old_steps)} step(s)", expanded=False):
+                for s in old_steps:
+                    _render_step_compact(s)
+
+        st.divider()
+        st.subheader("The AI has questions for you")
+        st.caption("Your answers guide the analysis, strategy, and model selection.")
+
+        with st.form("ap_question_form"):
+            answers: list[str] = []
+            for i, q in enumerate(questions):
+                answers.append(
+                    st.text_area(f"**Q{i+1}.** {q}", height=80, key=f"ap_q_{i}")
+                )
+            submitted = st.form_submit_button("Continue with my answers →", type="primary")
+
+        if submitted:
+            # Update the ask step in history to record the answers
+            for s in old_steps:
+                if s.kind == "ask" and s.data and "answers" not in s.data:
+                    s.data["answers"] = [a.strip() for a in answers]
+            st.session_state["ap_pending_answers"] = [a.strip() for a in answers]
+            st.session_state["ap_pending"] = None
+            st.session_state["ap_phase"] = "running"
+            st.rerun()
+
+    # ════════════════════════════════════════════════════════════════════
+    # DONE — show full log and results
+    # ════════════════════════════════════════════════════════════════════
+    elif phase == "done":
+        steps = st.session_state.get("ap_steps", [])
+        with st.expander(f"Full activity log — {len(steps)} step(s)", expanded=False):
+            for s in steps:
+                _render_step_compact(s)
+        _render_autopilot_results(st.session_state.get("ap"))
+
+
+# ── Step renderers ───────────────────────────────────────────────────────────
+
+def _render_autopilot_step(step: AutopilotStep) -> None:
+    """Live renderer — used inside st.status() during the running phase."""
+    if step.kind == "thought":
+        with st.expander(f"Step {step.index}: AI Reasoning", expanded=False):
+            st.markdown(step.detail)
+    elif step.kind == "tool_call":
+        st.write(f"**Step {step.index}:** ⚙ {step.title}")
+    elif step.kind == "tool_result":
+        st.success(f"Step {step.index}: {step.title} — {step.detail}")
+    elif step.kind == "chart":
+        with st.expander(f"Step {step.index}: {step.title}", expanded=True):
+            if step.detail:
+                st.caption(step.detail)
+            if step.data and "figure" in step.data:
+                st.plotly_chart(
+                    step.data["figure"],
+                    use_container_width=True,
+                    key=f"live_chart_{step.index}",
+                )
+    elif step.kind == "ask":
+        # Rendered separately in the "asking" phase — skip in live feed
+        pass
+    elif step.kind == "new_dataset":
+        st.success(f"**Step {step.index}: {step.title}** — {step.detail}")
+    elif step.kind == "training":
+        with st.expander(f"Step {step.index}: {step.title}", expanded=True):
+            st.write(step.detail)
+    elif step.kind == "summary":
+        with st.expander(f"Step {step.index}: Final Strategy", expanded=True):
+            st.markdown(step.detail)
+
+
+def _render_step_compact(step: AutopilotStep) -> None:
+    """Compact renderer for history display."""
+    if step.kind == "thought":
+        with st.expander(f"Step {step.index}: AI Reasoning", expanded=False):
+            st.markdown(step.detail)
+    elif step.kind == "tool_call":
+        st.caption(f"⚙ Step {step.index}: {step.title}")
+    elif step.kind == "tool_result":
+        st.caption(f"✓ Step {step.index}: {step.title} — {step.detail}")
+    elif step.kind == "chart":
+        with st.expander(f"Step {step.index}: {step.title}", expanded=False):
+            if step.detail:
+                st.caption(step.detail)
+            if step.data and "figure" in step.data:
+                st.plotly_chart(
+                    step.data["figure"],
+                    use_container_width=True,
+                    key=f"hist_chart_{step.index}",
+                )
+    elif step.kind == "ask":
+        questions = (step.data or {}).get("questions", [])
+        answers = (step.data or {}).get("answers", [])
+        with st.expander(f"Step {step.index}: AI Questions & Your Answers", expanded=False):
+            for i, q in enumerate(questions):
+                st.markdown(f"**Q{i+1}.** {q}")
+                a = answers[i] if i < len(answers) else "_no answer recorded_"
+                st.markdown(f"> {a}")
+    elif step.kind == "new_dataset":
+        st.caption(f"📂 Step {step.index}: {step.title} — {step.detail}")
+    elif step.kind == "training":
+        with st.expander(f"Step {step.index}: {step.title}", expanded=False):
+            st.write(step.detail)
+    elif step.kind == "summary":
+        with st.expander(f"Step {step.index}: Final Strategy", expanded=False):
+            st.markdown(step.detail)
+
+
+def _render_autopilot_results(autopilot: AiAutopilot | None) -> None:
+    """Render new datasets, training results and strategy report."""
+    if autopilot is None:
         return
 
     if autopilot.new_datasets:
@@ -523,7 +727,7 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
 
     if autopilot.training_runs:
         st.subheader("Training Results")
-        rows = []
+        rows: list[dict[str, Any]] = []
         for r in autopilot.training_runs:
             row: dict[str, Any] = {
                 "Dataset": r["dataset"],
@@ -531,9 +735,7 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
                 "Task": r["task_type"],
                 "Best Model": r["best_model"],
             }
-            row.update(
-                {k: round(v, 4) for k, v in r.get("best_metrics", {}).items()}
-            )
+            row.update({k: round(v, 4) for k, v in r.get("best_metrics", {}).items()})
             rows.append(row)
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
@@ -542,32 +744,10 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
         st.markdown(autopilot.strategy_summary)
 
 
-def _render_autopilot_step(step: AutopilotStep) -> None:
-    if step.kind == "thought":
-        with st.expander(f"Step {step.index}: AI Reasoning", expanded=False):
-            st.markdown(step.detail)
-    elif step.kind == "tool_call":
-        st.write(f"**Step {step.index}:** ⚙ {step.title}")
-    elif step.kind == "tool_result":
-        st.success(f"Step {step.index}: {step.title} — {step.detail}")
-    elif step.kind == "chart":
-        with st.expander(f"Step {step.index}: {step.title}", expanded=True):
-            if step.detail:
-                st.caption(step.detail)
-            if step.data and "figure" in step.data:
-                st.plotly_chart(
-                    step.data["figure"],
-                    use_container_width=True,
-                    key=f"autopilot_chart_{step.index}",
-                )
-    elif step.kind == "new_dataset":
-        st.success(f"**Step {step.index}: {step.title}** — {step.detail}")
-    elif step.kind == "training":
-        with st.expander(f"Step {step.index}: {step.title}", expanded=True):
-            st.write(step.detail)
-    elif step.kind == "summary":
-        with st.expander(f"Step {step.index}: Final Strategy", expanded=True):
-            st.markdown(step.detail)
+def _reset_autopilot() -> None:
+    for key in ("ap", "ap_gen", "ap_steps", "ap_phase", "ap_pending",
+                "ap_pending_answers", "ap_project_id"):
+        st.session_state.pop(key, None)
 
 
 if __name__ == "__main__":
