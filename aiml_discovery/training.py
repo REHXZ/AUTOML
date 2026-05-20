@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import inspect
-from dataclasses import asdict, dataclass
+import os
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterator
 
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -40,6 +41,11 @@ class TrainingSettings:
     test_size: float = 0.2
     random_state: int = 42
     max_rows: int | None = None
+    # When set, the train/test split is CHRONOLOGICAL — rows are sorted by
+    # this column and the last `test_size` fraction becomes the test set.
+    # Use this for forecasting / time-series tasks to avoid leakage from a
+    # random shuffle. The column must exist in the dataframe.
+    time_column: str | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +60,7 @@ class TrainingResult:
     best_metrics: dict[str, float]
     leaderboard: list[dict[str, Any]]
     settings: dict[str, Any]
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def to_metadata(self) -> dict[str, Any]:
         return asdict(self)
@@ -78,7 +85,25 @@ def infer_task_type(target: pd.Series) -> str:
     return REGRESSION
 
 
-def train_automl(dataframe: pd.DataFrame, settings: TrainingSettings) -> tuple[TrainingResult, Pipeline]:
+def _cpu_limit() -> int:
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
+def train_automl_stream(
+    dataframe: pd.DataFrame, settings: TrainingSettings
+) -> Iterator[dict[str, Any]]:
+    """Generator yielding real-time training progress dicts, then a final 'done' event.
+
+    Event types:
+      model_start  – fired before each model begins fitting
+      epoch        – fired after each warm-start step for iterative models
+      model_done   – fired after each model finishes (success or failed)
+      done         – final event carrying 'result' (TrainingResult) and 'pipeline'
+    """
+    n_jobs = _cpu_limit()
+    for env_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ[env_var] = str(n_jobs)
+
     if settings.target_column not in dataframe.columns:
         raise ValueError(f"Target column '{settings.target_column}' was not found.")
 
@@ -89,7 +114,15 @@ def train_automl(dataframe: pd.DataFrame, settings: TrainingSettings) -> tuple[T
     if len(working) < 5:
         raise ValueError("At least 5 rows with a target value are required for training.")
 
-    feature_columns = [column for column in working.columns if column != settings.target_column]
+    # Exclude the target AND the time column (when used for chronological split)
+    # from the feature set. The time column is only used to ORDER the data; using
+    # it as a feature would let the model memorise the date and would also break
+    # sklearn's SimpleImputer (which doesn't accept datetime64 dtype).
+    feature_columns = [
+        column for column in working.columns
+        if column != settings.target_column
+        and column != settings.time_column
+    ]
     if not feature_columns:
         raise ValueError("Training requires at least one feature column besides the target.")
 
@@ -97,49 +130,105 @@ def train_automl(dataframe: pd.DataFrame, settings: TrainingSettings) -> tuple[T
     task_type = infer_task_type(target)
 
     features = working[feature_columns]
-    stratify = _stratify_target(target, settings.test_size) if task_type == CLASSIFICATION else None
-    x_train, x_test, y_train, y_test = train_test_split(
-        features,
-        target,
-        test_size=settings.test_size,
-        random_state=settings.random_state,
-        stratify=stratify,
-    )
+    test_time_values: pd.Series | None = None
+
+    if settings.time_column and settings.time_column in working.columns:
+        # Chronological holdout: sort by time, last test_size fraction = test set.
+        order = pd.to_datetime(working[settings.time_column], errors="coerce")
+        if order.isna().all():
+            order = working[settings.time_column]
+        sort_idx = order.argsort(kind="mergesort")
+        features = features.iloc[sort_idx].reset_index(drop=True)
+        target = target.iloc[sort_idx].reset_index(drop=True)
+        # Keep the time column aligned for diagnostics (since we dropped it from features).
+        time_aligned = working[settings.time_column].iloc[sort_idx].reset_index(drop=True)
+        split_at = int(len(features) * (1.0 - settings.test_size))
+        if split_at < 2 or split_at >= len(features):
+            raise ValueError(
+                f"Chronological split with test_size={settings.test_size} produced "
+                f"unusable train ({split_at}) / test ({len(features) - split_at}) sizes."
+            )
+        x_train = features.iloc[:split_at]
+        x_test = features.iloc[split_at:]
+        y_train = target.iloc[:split_at]
+        y_test = target.iloc[split_at:]
+        test_time_values = time_aligned.iloc[split_at:].reset_index(drop=True)
+    else:
+        stratify = _stratify_target(target, settings.test_size) if task_type == CLASSIFICATION else None
+        x_train, x_test, y_train, y_test = train_test_split(
+            features,
+            target,
+            test_size=settings.test_size,
+            random_state=settings.random_state,
+            stratify=stratify,
+        )
 
     preprocessor = build_preprocessor(features)
-    candidates = _candidate_models(task_type, settings.random_state)
+    candidates = _candidate_models(task_type, settings.random_state, n_jobs)
     leaderboard: list[dict[str, Any]] = []
     fitted_models: dict[str, Pipeline] = {}
+    predictions_by_model: dict[str, Any] = {}
+    total_models = len(candidates)
 
-    for model_name, model in candidates.items():
-        pipeline = Pipeline(
-            steps=[
-                ("preprocessor", preprocessor),
-                ("model", model),
-            ]
-        )
+    for model_idx, (model_name, model) in enumerate(candidates.items(), 1):
+        yield {
+            "type": "model_start",
+            "model_name": model_name,
+            "model_idx": model_idx,
+            "total_models": total_models,
+        }
+
+        pipeline = Pipeline(steps=[("preprocessor", preprocessor), ("model", model)])
         try:
-            pipeline.fit(x_train, y_train)
+            if isinstance(getattr(model, "n_estimators", None), int):
+                total_estimators = model.n_estimators
+                num_steps = 10
+                step_size = max(1, total_estimators // num_steps)
+                model.warm_start = True
+
+                for step in range(1, num_steps + 1):
+                    model.n_estimators = min(step * step_size, total_estimators)
+                    pipeline.fit(x_train, y_train)
+                    yield {
+                        "type": "epoch",
+                        "model_name": model_name,
+                        "model_idx": model_idx,
+                        "total_models": total_models,
+                        "epoch": step,
+                        "total_epochs": num_steps,
+                        "estimators": model.n_estimators,
+                        "total_estimators": total_estimators,
+                    }
+
+                if model.n_estimators < total_estimators:
+                    model.n_estimators = total_estimators
+                    pipeline.fit(x_train, y_train)
+            else:
+                pipeline.fit(x_train, y_train)
+
             predictions = pipeline.predict(x_test)
             metrics = _evaluate_model(task_type, y_test, predictions, pipeline, x_test)
-            leaderboard.append(
-                {
-                    "model": model_name,
-                    "status": "success",
-                    "metrics": metrics,
-                    "error": "",
-                }
-            )
+            leaderboard.append({"model": model_name, "status": "success", "metrics": metrics, "error": ""})
             fitted_models[model_name] = pipeline
+            predictions_by_model[model_name] = predictions
+            yield {
+                "type": "model_done",
+                "model_name": model_name,
+                "model_idx": model_idx,
+                "total_models": total_models,
+                "status": "success",
+                "metrics": metrics,
+            }
         except Exception as exc:  # pragma: no cover - surfaced in UI and metadata.
-            leaderboard.append(
-                {
-                    "model": model_name,
-                    "status": "failed",
-                    "metrics": {},
-                    "error": str(exc),
-                }
-            )
+            leaderboard.append({"model": model_name, "status": "failed", "metrics": {}, "error": str(exc)})
+            yield {
+                "type": "model_done",
+                "model_name": model_name,
+                "model_idx": model_idx,
+                "total_models": total_models,
+                "status": "failed",
+                "error": str(exc),
+            }
 
     leaderboard = _rank_leaderboard(task_type, leaderboard)
     successes = [entry for entry in leaderboard if entry["status"] == "success"]
@@ -150,6 +239,20 @@ def train_automl(dataframe: pd.DataFrame, settings: TrainingSettings) -> tuple[T
     best_entry = successes[0]
     best_model_name = best_entry["model"]
     run_id = datetime.now(timezone.utc).strftime("run_%Y%m%d_%H%M%S_%f")
+
+    # Build diagnostic data (y_test / y_pred / optional time axis) from the best model.
+    diagnostics: dict[str, Any] = {}
+    best_predictions = predictions_by_model.get(best_model_name)
+    if best_predictions is not None:
+        try:
+            from .diagnostics import build_diagnostics_dict
+
+            diagnostics = build_diagnostics_dict(
+                task_type, y_test, best_predictions, x_test,
+                time_values=test_time_values,
+            )
+        except Exception:  # pragma: no cover - diagnostics must never break a run.
+            diagnostics = {}
 
     result = TrainingResult(
         run_id=run_id,
@@ -162,8 +265,16 @@ def train_automl(dataframe: pd.DataFrame, settings: TrainingSettings) -> tuple[T
         best_metrics=best_entry["metrics"],
         leaderboard=leaderboard,
         settings=asdict(settings),
+        diagnostics=diagnostics,
     )
-    return result, fitted_models[best_model_name]
+    yield {"type": "done", "result": result, "pipeline": fitted_models[best_model_name]}
+
+
+def train_automl(dataframe: pd.DataFrame, settings: TrainingSettings) -> tuple[TrainingResult, Pipeline]:
+    for update in train_automl_stream(dataframe, settings):
+        if update["type"] == "done":
+            return update["result"], update["pipeline"]
+    raise RuntimeError("Training stream ended without a result.")
 
 
 def build_preprocessor(dataframe: pd.DataFrame) -> ColumnTransformer:
@@ -204,7 +315,7 @@ def build_preprocessor(dataframe: pd.DataFrame) -> ColumnTransformer:
     return ColumnTransformer(transformers=transformers, remainder="drop")
 
 
-def _candidate_models(task_type: str, random_state: int) -> dict[str, Any]:
+def _candidate_models(task_type: str, random_state: int, n_jobs: int = 1) -> dict[str, Any]:
     if task_type == CLASSIFICATION:
         return {
             "Baseline Majority Class": DummyClassifier(strategy="most_frequent"),
@@ -213,7 +324,7 @@ def _candidate_models(task_type: str, random_state: int) -> dict[str, Any]:
                 n_estimators=120,
                 min_samples_leaf=2,
                 random_state=random_state,
-                n_jobs=-1,
+                n_jobs=n_jobs,
             ),
             "Gradient Boosting": GradientBoostingClassifier(random_state=random_state),
         }
@@ -225,7 +336,7 @@ def _candidate_models(task_type: str, random_state: int) -> dict[str, Any]:
             n_estimators=120,
             min_samples_leaf=2,
             random_state=random_state,
-            n_jobs=-1,
+            n_jobs=n_jobs,
         ),
         "Gradient Boosting": GradientBoostingRegressor(random_state=random_state),
     }

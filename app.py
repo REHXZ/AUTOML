@@ -11,13 +11,20 @@ from dotenv import load_dotenv
 
 load_dotenv()  # reads OPENAI_API_KEY (and others) from .env
 
+from aiml_discovery.logging_setup import configure_logging
+from aiml_discovery.tracing import configure_tracing
+
+configure_logging()
+configure_tracing()
+
 from aiml_discovery.ai_autopilot import AiAutopilot, AutopilotStep
 from aiml_discovery.config import APP_NAME, PROJECT_HOME, UPLOAD_TYPES
+from aiml_discovery.diagnostics import build_diagnostic_figures
 from aiml_discovery.ingestion import load_dataset, list_sqlite_tables
 from aiml_discovery.profiling import profile_dataframe
 from aiml_discovery.reporting import build_markdown_report
 from aiml_discovery.storage import DatasetInfo, ProjectInfo, ProjectStore
-from aiml_discovery.training import TrainingSettings, train_automl
+from aiml_discovery.training import TrainingSettings, train_automl, train_automl_stream
 
 PAGES = [
     "Projects",
@@ -289,16 +296,73 @@ def render_training_lab(store: ProjectStore, project: ProjectInfo) -> None:
             max_rows=int(max_rows) if max_rows else None,
         )
         try:
-            with st.spinner("Training candidate models"):
-                result, model = train_automl(loaded.dataframe, settings)
+            result = None
+            fitted_model = None
+            completed_rows: list[dict] = []
+
+            header_slot = st.empty()
+            overall_bar = st.progress(0.0)
+            model_label = st.empty()
+            epoch_bar = st.empty()
+            completed_slot = st.empty()
+
+            header_slot.info("Starting training…")
+
+            for update in train_automl_stream(loaded.dataframe, settings):
+                utype = update["type"]
+                idx: int = update.get("model_idx", 0)
+                total: int = update.get("total_models", 1)
+                name: str = update.get("model_name", "")
+
+                if utype == "model_start":
+                    overall_bar.progress((idx - 1) / total)
+                    model_label.markdown(f"**Model {idx} / {total}:** {name}")
+                    epoch_bar.empty()
+
+                elif utype == "epoch":
+                    ep: int = update["epoch"]
+                    total_ep: int = update["total_epochs"]
+                    est: int = update["estimators"]
+                    total_est: int = update["total_estimators"]
+                    epoch_pct = ep / total_ep
+                    overall_bar.progress((idx - 1 + epoch_pct) / total)
+                    model_label.markdown(f"**Model {idx} / {total}:** {name}")
+                    epoch_bar.progress(epoch_pct, text=f"{est} / {total_est} estimators")
+
+                elif utype == "model_done":
+                    overall_bar.progress(idx / total)
+                    epoch_bar.empty()
+                    if update["status"] == "success":
+                        row: dict = {"Model": name, "Status": "Done"}
+                        row.update({k: round(v, 4) for k, v in update["metrics"].items()})
+                    else:
+                        row = {"Model": name, "Status": f"Failed: {update.get('error', '')[:60]}"}
+                    completed_rows.append(row)
+                    completed_slot.dataframe(
+                        pd.DataFrame(completed_rows), hide_index=True, use_container_width=True
+                    )
+
+                elif utype == "done":
+                    result = update["result"]
+                    fitted_model = update["pipeline"]
+                    overall_bar.progress(1.0)
+                    model_label.markdown("**Training complete!**")
+
+            if result and fitted_model:
+                overall_bar.empty()
+                model_label.empty()
+                epoch_bar.empty()
+                completed_slot.empty()
+                header_slot.empty()
+
                 profile = profile_dataframe(loaded.dataframe)
                 metadata = result.to_metadata()
                 metadata["dataset"] = dataset.to_dict()
                 report = build_markdown_report(project.name, dataset.to_dict(), metadata, profile)
-                run_path = store.save_run(project.id, metadata, model, report)
-            st.success(f"Saved run {result.run_id}.")
-            st.session_state["latest_run_path"] = str(run_path)
-            render_training_result(metadata)
+                run_path = store.save_run(project.id, metadata, fitted_model, report)
+                st.success(f"Saved run {result.run_id}.")
+                st.session_state["latest_run_path"] = str(run_path)
+                render_training_result(metadata)
         except Exception as exc:
             st.error(str(exc))
 
@@ -442,6 +506,27 @@ def render_training_result(metadata: dict[str, Any]) -> None:
         st.subheader("Leaderboard")
         st.dataframe(leaderboard, hide_index=True, use_container_width=True)
 
+    diagnostics = metadata.get("diagnostics") or {}
+    if diagnostics:
+        figures = build_diagnostic_figures(
+            diagnostics, target_name=metadata.get("target_column", "target")
+        )
+        if figures:
+            st.subheader("Model Diagnostics — Test Set")
+            if diagnostics.get("is_time_series"):
+                st.caption(
+                    f"Time-series detected · {diagnostics.get('n_points', 0)} held-out points "
+                    "· forecast plotted in date order"
+                )
+            else:
+                st.caption(
+                    f"{diagnostics.get('n_points', 0)} held-out test points "
+                    "from the best model's predictions"
+                )
+            for title, fig in figures:
+                st.markdown(f"**{title}**")
+                st.plotly_chart(fig, use_container_width=True)
+
 
 def leaderboard_table(leaderboard: list[dict[str, Any]]) -> pd.DataFrame:
     rows = []
@@ -480,7 +565,7 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
     # ── API key (from .env or manual entry) ─────────────────────────────
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if api_key:
-        st.success("OpenAI API key loaded from .env")
+        st.success("Azure OpenAI credentials loaded from .env")
     else:
         api_key = st.text_input(
             "OpenAI API Key",
@@ -591,7 +676,14 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
     elif phase == "asking":
         old_steps = st.session_state.get("ap_steps", [])
         pending: dict = st.session_state.get("ap_pending") or {}
-        questions: list[str] = pending.get("questions", [])
+        raw_questions = pending.get("questions", [])
+        # Normalise: questions may be plain strings (legacy) or dicts with
+        # recommendation / alternatives / explanation (new multi-agent format).
+        questions: list[dict] = [
+            {"question": q, "recommendation": "", "alternatives": [], "explanation": ""}
+            if isinstance(q, str) else q
+            for q in raw_questions
+        ]
 
         if old_steps:
             with st.expander(f"Activity so far — {len(old_steps)} step(s)", expanded=False):
@@ -599,23 +691,49 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
                     _render_step_compact(s)
 
         st.divider()
-        st.subheader("The AI has questions for you")
-        st.caption("Your answers guide the analysis, strategy, and model selection.")
+        st.subheader("The AIML Scientist has questions for you")
+        st.caption(
+            "Each question comes with the Scientist's recommended answer pre-filled. "
+            "Accept as-is, edit, or pick an alternative."
+        )
 
         with st.form("ap_question_form"):
             answers: list[str] = []
             for i, q in enumerate(questions):
+                question_text = q.get("question", "")
+                recommendation = q.get("recommendation", "")
+                alternatives = q.get("alternatives", []) or []
+                explanation = q.get("explanation", "")
+
+                st.markdown(f"**Q{i+1}.** {question_text}")
+                if explanation:
+                    st.caption(explanation)
+                if recommendation:
+                    st.markdown(f"🤖 **Scientist's recommendation:** {recommendation}")
+                if alternatives:
+                    st.markdown(
+                        "**Alternatives:** "
+                        + " · ".join(f"`{alt}`" for alt in alternatives)
+                    )
                 answers.append(
-                    st.text_area(f"**Q{i+1}.** {q}", height=80, key=f"ap_q_{i}")
+                    st.text_area(
+                        "Your answer (defaults to the recommendation if left blank):",
+                        value=recommendation,
+                        height=80,
+                        key=f"ap_q_{i}",
+                    )
                 )
-            submitted = st.form_submit_button("Continue with my answers →", type="primary")
+                st.divider()
+            submitted = st.form_submit_button(
+                "Continue with my answers →", type="primary"
+            )
 
         if submitted:
-            # Update the ask step in history to record the answers
+            cleaned = [a.strip() for a in answers]
             for s in old_steps:
                 if s.kind == "ask" and s.data and "answers" not in s.data:
-                    s.data["answers"] = [a.strip() for a in answers]
-            st.session_state["ap_pending_answers"] = [a.strip() for a in answers]
+                    s.data["answers"] = cleaned
+            st.session_state["ap_pending_answers"] = cleaned
             st.session_state["ap_pending"] = None
             st.session_state["ap_phase"] = "running"
             st.rerun()
@@ -633,10 +751,24 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
 
 # ── Step renderers ───────────────────────────────────────────────────────────
 
+def _agent_badge(step: AutopilotStep) -> str:
+    """Return a short [Agent] prefix for display."""
+    label_map = {
+        "scientist": "🧑‍🔬 Scientist",
+        "eda": "🔍 EDA",
+        "feature_engineering": "🛠 FE",
+        "modeling": "🎯 Modeling",
+        "review": "🧪 Review",
+        "fine_tuning": "🔧 Tuning",
+    }
+    return label_map.get(getattr(step, "agent", "scientist"), "🧑‍🔬 Scientist")
+
+
 def _render_autopilot_step(step: AutopilotStep) -> None:
     """Live renderer — used inside st.status() during the running phase."""
+    agent = _agent_badge(step)
     if step.kind == "thought":
-        with st.expander(f"Step {step.index}: AI Reasoning", expanded=False):
+        with st.expander(f"Step {step.index} — {agent} reasoning", expanded=False):
             st.markdown(step.detail)
     elif step.kind == "tool_call":
         st.write(f"**Step {step.index}:** ⚙ {step.title}")
@@ -653,13 +785,30 @@ def _render_autopilot_step(step: AutopilotStep) -> None:
                     key=f"live_chart_{step.index}",
                 )
     elif step.kind == "ask":
-        # Rendered separately in the "asking" phase — skip in live feed
+        # Rendered separately in the "asking" phase — skip in live feed.
         pass
     elif step.kind == "new_dataset":
         st.success(f"**Step {step.index}: {step.title}** — {step.detail}")
     elif step.kind == "training":
         with st.expander(f"Step {step.index}: {step.title}", expanded=True):
             st.write(step.detail)
+    elif step.kind == "review":
+        with st.expander(f"Step {step.index}: {step.title}", expanded=True):
+            if step.detail:
+                st.markdown(step.detail)
+            data = step.data or {}
+            if data.get("issues"):
+                st.markdown("**Issues:**\n" + "\n".join(f"- {x}" for x in data["issues"]))
+            if data.get("improvements_to_try"):
+                st.markdown(
+                    "**Improvements to try:**\n"
+                    + "\n".join(f"- {x}" for x in data["improvements_to_try"])
+                )
+    elif step.kind == "observation":
+        st.info(f"📝 Step {step.index} — {agent} note: {step.detail}")
+    elif step.kind in ("agent_start", "agent_end"):
+        prefix = "▶" if step.kind == "agent_start" else "■"
+        st.caption(f"{prefix} Step {step.index} — {step.title}")
     elif step.kind == "summary":
         with st.expander(f"Step {step.index}: Final Strategy", expanded=True):
             st.markdown(step.detail)
@@ -667,8 +816,9 @@ def _render_autopilot_step(step: AutopilotStep) -> None:
 
 def _render_step_compact(step: AutopilotStep) -> None:
     """Compact renderer for history display."""
+    agent = _agent_badge(step)
     if step.kind == "thought":
-        with st.expander(f"Step {step.index}: AI Reasoning", expanded=False):
+        with st.expander(f"Step {step.index} — {agent} reasoning", expanded=False):
             st.markdown(step.detail)
     elif step.kind == "tool_call":
         st.caption(f"⚙ Step {step.index}: {step.title}")
@@ -685,11 +835,19 @@ def _render_step_compact(step: AutopilotStep) -> None:
                     key=f"hist_chart_{step.index}",
                 )
     elif step.kind == "ask":
-        questions = (step.data or {}).get("questions", [])
+        raw_qs = (step.data or {}).get("questions", [])
         answers = (step.data or {}).get("answers", [])
-        with st.expander(f"Step {step.index}: AI Questions & Your Answers", expanded=False):
-            for i, q in enumerate(questions):
-                st.markdown(f"**Q{i+1}.** {q}")
+        with st.expander(
+            f"Step {step.index}: AI Questions & Your Answers", expanded=False
+        ):
+            for i, q in enumerate(raw_qs):
+                if isinstance(q, dict):
+                    st.markdown(f"**Q{i+1}.** {q.get('question', '')}")
+                    rec = q.get("recommendation", "")
+                    if rec:
+                        st.caption(f"Scientist recommended: {rec}")
+                else:
+                    st.markdown(f"**Q{i+1}.** {q}")
                 a = answers[i] if i < len(answers) else "_no answer recorded_"
                 st.markdown(f"> {a}")
     elif step.kind == "new_dataset":
@@ -697,6 +855,15 @@ def _render_step_compact(step: AutopilotStep) -> None:
     elif step.kind == "training":
         with st.expander(f"Step {step.index}: {step.title}", expanded=False):
             st.write(step.detail)
+    elif step.kind == "review":
+        with st.expander(f"Step {step.index}: {step.title}", expanded=False):
+            if step.detail:
+                st.markdown(step.detail)
+    elif step.kind == "observation":
+        st.caption(f"📝 Step {step.index} — {agent} note: {step.detail}")
+    elif step.kind in ("agent_start", "agent_end"):
+        prefix = "▶" if step.kind == "agent_start" else "■"
+        st.caption(f"{prefix} Step {step.index} — {step.title}")
     elif step.kind == "summary":
         with st.expander(f"Step {step.index}: Final Strategy", expanded=False):
             st.markdown(step.detail)

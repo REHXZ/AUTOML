@@ -8,4 +8,6 @@ pytest>=8.2
 openai>=1.0
 kaleido>=0.2
 python-dotenv>=1.0
+arize-phoenix-otel>=0.6
+openinference-instrumentation-openai>=0.1
 
