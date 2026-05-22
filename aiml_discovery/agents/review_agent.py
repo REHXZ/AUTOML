@@ -53,6 +53,13 @@ You will see one or more training runs in the notebook. For EACH run:
    ceiling for the data quality, say so honestly so the Scientist
    doesn't waste rounds chasing a noisy +0.001.
 
+5. USE THE RESEARCHER WHEN YOU NEED EXTERNAL CONTEXT.
+   Call spawn_researcher if you need to:
+     – Verify whether a metric level is reasonable for the domain.
+     – Look up known benchmarks for a technique.
+     – Understand if a feature pattern is domain-standard or suspicious.
+   Pass a specific, focused question — not a vague topic.
+
 Call record_finding(text) for each major critique, then done(summary)
 with the structured recommendations.
 """
@@ -69,6 +76,27 @@ def _tools() -> list[dict]:
                     "type": "object",
                     "properties": {"text": {"type": "string"}},
                     "required": ["text"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "spawn_researcher",
+                "description": (
+                    "Delegate a research question to the Researcher Agent, which will "
+                    "search the web via SearXNG. Use this to verify benchmarks, look up "
+                    "domain norms, or resolve uncertainty about whether a result is plausible."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "Specific research question to investigate.",
+                        }
+                    },
+                    "required": ["question"],
                 },
             },
         },
@@ -127,17 +155,10 @@ class ReviewAgent(BaseAgent):
             f"Training runs to review:\n{self._ctx.training_runs_summary()}\n\n"
             f"Notebook so far:\n{self._ctx.notebook_text()}\n\n"
             f"User goal: {self._ctx.user_goal or '(none)'}\n\n"
-            "Critique and recommend."
+            "Critique and recommend. Use spawn_researcher if you need external context."
         )
 
-        yield from self.run_llm_loop(
-            system_prompt=_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            tools=_tools(),
-            dispatch=self._dispatch,
-            max_iterations=12,
-            thought_title="Review Agent — Reasoning",
-        )
+        yield from self._drive_loop(user_prompt)
 
         if self._summary:
             yield self._step(
@@ -150,19 +171,99 @@ class ReviewAgent(BaseAgent):
         yield self._step("agent_end", "Review Agent finished", "")
         return self._summary or {"narrative": "Review agent ended without summary."}
 
-    def _dispatch(
-        self, name: str, args: dict, tool_call_id: str
-    ) -> tuple[str | None, AutopilotStep | None, bool]:
-        if name == "record_finding":
-            text = (args.get("text") or "").strip()
-            if text:
-                self._ctx.notebook.append(f"[Review] {text}")
-            return (
-                json.dumps({"recorded": True}),
-                self._step("observation", "Review critique", text),
-                False,
+    # ------------------------------------------------------------------
+    # Custom loop so spawn_researcher can yield from the sub-agent.
+    # ------------------------------------------------------------------
+
+    def _drive_loop(
+        self, user_prompt: str
+    ) -> Generator[AutopilotStep, list[str] | None, None]:
+        from .researcher_agent import ResearcherAgent
+
+        messages: list[dict] = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        tools = _tools()
+
+        for _ in range(12):
+            response = self._client.chat.completions.create(
+                model=self._deployment,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
             )
-        if name == "done":
-            self._summary = to_json_safe(args)
-            return json.dumps({"status": "noted"}), None, True
-        return json.dumps({"error": f"Unknown tool: {name}"}), None, False
+            choice = response.choices[0]
+
+            assistant_msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": choice.message.content,
+            }
+            if choice.message.tool_calls:
+                assistant_msg["tool_calls"] = [
+                    tc.model_dump() for tc in choice.message.tool_calls
+                ]
+            messages.append(assistant_msg)
+
+            if choice.message.content:
+                yield self._step("thought", "Review Agent — Reasoning", choice.message.content)
+
+            if choice.finish_reason == "stop":
+                break
+            if choice.finish_reason != "tool_calls":
+                continue
+
+            terminate = False
+            for tc in choice.message.tool_calls:
+                name = tc.function.name
+                args: dict[str, Any] = json.loads(tc.function.arguments or "{}")
+
+                yield self._step(
+                    "tool_call",
+                    f"[Review Agent] {name}",
+                    json.dumps(args, indent=2),
+                )
+
+                if name == "spawn_researcher":
+                    question = (args.get("question") or "").strip()
+                    sub = ResearcherAgent(self._client, self._deployment, self._ctx)
+                    sub_summary = yield from sub.run(question)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(to_json_safe(sub_summary)),
+                    })
+
+                elif name == "record_finding":
+                    text = (args.get("text") or "").strip()
+                    if text:
+                        self._ctx.notebook.append(f"[Review] {text}")
+                    yield self._step("observation", "Review critique", text)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps({"recorded": True}),
+                    })
+
+                elif name == "done":
+                    self._summary = to_json_safe(args)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps({"status": "noted"}),
+                    })
+                    terminate = True
+                    break
+
+                else:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps({"error": f"Unknown tool: {name}"}),
+                    })
+
+            if terminate:
+                break
+
+    def _dispatch(self, name: str, args: dict, tool_call_id: str):
+        return json.dumps({"error": "dispatch handled in _drive_loop"}), None, False

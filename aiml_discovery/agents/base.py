@@ -7,7 +7,10 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generator
+from typing import TYPE_CHECKING, Any, Callable, Generator
+
+if TYPE_CHECKING:
+    from ..session_store import SessionWriter
 
 import numpy as np
 import pandas as pd
@@ -58,6 +61,9 @@ class AgentContext:
     training_runs: list[dict[str, Any]] = field(default_factory=list)
     # Answers the Scientist has already collected from the user.
     user_answers: list[dict[str, str]] = field(default_factory=list)
+    # Optional persistence handle. When set, agents stream their LLM messages
+    # to disk so the run can be resumed after a refresh.
+    session: "SessionWriter | None" = None
     _step_counter: int = 0
 
     def next_step_index(self) -> int:
@@ -158,6 +164,11 @@ class BaseAgent:
             agent=self.name,
         )
 
+    def _persist_message(self, message: dict) -> None:
+        session = getattr(self._ctx, "session", None)
+        if session is not None:
+            session.append_message(message)
+
     # ------------------------------------------------------------------
     # LLM tool-calling loop
     # ------------------------------------------------------------------
@@ -180,6 +191,8 @@ class BaseAgent:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+        self._persist_message(messages[0])
+        self._persist_message(messages[1])
         thought_title = thought_title or f"{self.display_name} — Reasoning"
 
         for iteration in range(max_iterations):
@@ -208,6 +221,7 @@ class BaseAgent:
                     tc.model_dump() for tc in choice.message.tool_calls
                 ]
             messages.append(assistant_msg)
+            self._persist_message(assistant_msg)
 
             if choice.message.content:
                 yield self._step("thought", thought_title, choice.message.content)
@@ -255,25 +269,25 @@ class BaseAgent:
                         "tool_result | agent=%s name=%s content=vision+text parts=%d",
                         self.name, name, len(tool_content),
                     )
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": tool_content,
-                        }
-                    )
+                    tool_msg = {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": tool_content,
+                    }
+                    messages.append(tool_msg)
+                    self._persist_message(tool_msg)
                 else:
                     log.debug(
                         "tool_result | agent=%s name=%s content_len=%d",
                         self.name, name, len(tool_content),
                     )
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": tool_content,
-                        }
-                    )
+                    tool_msg = {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": tool_content,
+                    }
+                    messages.append(tool_msg)
+                    self._persist_message(tool_msg)
 
                 if terminate:
                     terminate_outer = True

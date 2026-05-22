@@ -23,6 +23,7 @@ from .eda_agent import EdaAgent
 from .feature_engineering_agent import FeatureEngineeringAgent
 from .fine_tuning_agent import FineTuningAgent
 from .modeling_agent import ModelingAgent
+from .researcher_agent import ResearcherAgent
 from .review_agent import ReviewAgent
 from .scientist import AimlScientist
 
@@ -35,6 +36,7 @@ __all__ = [
     "FeatureEngineeringAgent",
     "FineTuningAgent",
     "ModelingAgent",
+    "ResearcherAgent",
     "ReviewAgent",
     "build_azure_client",
     "get_deployment",

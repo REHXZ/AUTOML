@@ -15,6 +15,7 @@ from .eda_agent import EdaAgent
 from .feature_engineering_agent import FeatureEngineeringAgent
 from .fine_tuning_agent import FineTuningAgent
 from .modeling_agent import ModelingAgent
+from .researcher_agent import ResearcherAgent
 from .review_agent import ReviewAgent
 
 
@@ -27,6 +28,9 @@ discovery platform. You direct a team of specialist sub-agents:
   • Modeling Agent — runs AutoML training.
   • Review Agent — critiques runs, flags issues, suggests next experiments.
   • Fine Tuning Agent — iterates on review feedback to lift scores.
+  • Researcher Agent — searches the web (via SearXNG) to answer domain
+    questions, look up ML techniques, find benchmarks, or resolve
+    uncertainties in the data.
 
 Your operating principles:
 
@@ -104,8 +108,20 @@ Your operating principles:
      at the top level instead of nested under params — be explicit about
      the nesting in your instructions so the LLM gets it right first try.
 
+  8. USE THE RESEARCHER FOR UNCERTAINTY AND DOMAIN GAPS.
+     Call delegate_to_researcher whenever you encounter:
+       – An unfamiliar domain (e.g. "what does shimano_part_no encode?")
+       – Uncertainty about the right ML technique for a problem type
+       – A metric that looks suspiciously high or low and you want to
+         cross-check against known benchmarks
+       – Any question the user posed that requires external knowledge
+     Pass a specific, focused research question — not a vague topic.
+     The Researcher's findings are added to the shared notebook and are
+     available to Review and Modeling automatically.
+
 A typical (but not mandatory) flow:
   → ask_user (only if target is genuinely ambiguous) with suggestions
+  → delegate_to_researcher (optional: background domain research)
   → delegate_to_eda (broad exploration of every dataset)
   → record_observation (your reading of the EDA)
   → delegate_to_feature_engineering (build 1-2 candidate datasets;
@@ -113,7 +129,8 @@ A typical (but not mandatory) flow:
   → delegate_to_modeling (baseline run on the best candidate)
   → delegate_to_review (critique the baseline)
   → delegate_to_fine_tuning (try the top improvements)
-  → maybe loop back to FE or Modeling with new ideas
+  → maybe loop back to FE or Modeling with new ideas, or call Researcher
+     again if new uncertainties surface
   → finalize_strategy
 
 You may break this flow whenever your judgement says so.
@@ -226,6 +243,27 @@ def _tools() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "delegate_to_researcher",
+                "description": (
+                    "Dispatch the Researcher Agent to search the web for domain knowledge, "
+                    "ML technique benchmarks, or to resolve data uncertainties. "
+                    "Pass a specific, focused research question."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "The specific research question to investigate.",
+                        }
+                    },
+                    "required": ["question"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "record_observation",
                 "description": "Write your own observation/hypothesis to the shared notebook.",
                 "parameters": {
@@ -264,6 +302,7 @@ class AimlScientist(BaseAgent):
     def __init__(self, client, deployment: str, context: AgentContext) -> None:
         super().__init__(client, deployment, context)
         self.strategy_summary: str = ""
+        self._messages: list[dict] = []
 
     def run(self) -> Generator[AutopilotStep, list[str] | None, None]:
         project = self._ctx.store.get_project(self._ctx.project_id)
@@ -281,19 +320,45 @@ class AimlScientist(BaseAgent):
             "absolutely necessary and always include your own recommendation."
         )
 
-        yield from self._drive_loop(user_prompt)
+        self._messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        self._persist_message(self._messages[0])
+        self._persist_message(self._messages[1])
+        yield from self._run_loop_iterations()
+
+    # ------------------------------------------------------------------
+    # Resume / continue support
+    # ------------------------------------------------------------------
+
+    def load_messages(self, messages: list[dict], strategy_summary: str = "") -> None:
+        """Rehydrate a prior conversation so continue_with() can pick up."""
+        self._messages = list(messages)
+        self.strategy_summary = strategy_summary
+
+    def continue_with(
+        self, user_message: str
+    ) -> Generator[AutopilotStep, list[str] | None, None]:
+        """Append a follow-up user message and resume the orchestrator loop."""
+        if not self._messages:
+            # If we are continuing after a fresh load with no system prompt,
+            # seed one so the LLM still has its role.
+            self._messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+            self._persist_message(self._messages[0])
+        followup = {"role": "user", "content": user_message}
+        self._messages.append(followup)
+        self._persist_message(followup)
+        yield from self._run_loop_iterations()
 
     # ------------------------------------------------------------------
     # Loop driver — handles ask_user pauses and sub-agent forwarding.
     # ------------------------------------------------------------------
 
-    def _drive_loop(
-        self, user_prompt: str
+    def _run_loop_iterations(
+        self,
     ) -> Generator[AutopilotStep, list[str] | None, None]:
-        messages: list[dict] = [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
+        messages = self._messages
         tools = _tools()
 
         for iteration in range(60):
@@ -322,6 +387,7 @@ class AimlScientist(BaseAgent):
                     tc.model_dump() for tc in choice.message.tool_calls
                 ]
             messages.append(assistant_msg)
+            self._persist_message(assistant_msg)
 
             if choice.message.content:
                 yield self._step("thought", "AIML Scientist — Reasoning", choice.message.content)
@@ -348,13 +414,13 @@ class AimlScientist(BaseAgent):
                 tool_content, terminate_flag = yield from self._dispatch(name, args)
 
                 if tool_content is not None:
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": tool_content,
-                        }
-                    )
+                    tool_msg = {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": tool_content,
+                    }
+                    messages.append(tool_msg)
+                    self._persist_message(tool_msg)
                 if terminate_flag:
                     terminate = True
                     break
@@ -409,6 +475,13 @@ class AimlScientist(BaseAgent):
             log.info("Fine Tuning Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
             return json.dumps(to_json_safe(summary)), False
 
+        if name == "delegate_to_researcher":
+            log.info("Scientist delegating → Researcher Agent")
+            sub = ResearcherAgent(self._client, self._deployment, self._ctx)
+            summary = yield from sub.run(args.get("question", ""))
+            log.info("Researcher Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
+            return json.dumps(to_json_safe(summary)), False
+
         if name == "record_observation":
             text = (args.get("text") or "").strip()
             if text:
@@ -419,6 +492,12 @@ class AimlScientist(BaseAgent):
         if name == "finalize_strategy":
             summary = args.get("summary", "")
             self.strategy_summary = summary
+            session = getattr(self._ctx, "session", None)
+            if session is not None:
+                try:
+                    session.set_strategy_summary(summary)
+                except Exception as exc:  # pragma: no cover — defensive
+                    log.warning("Could not persist strategy_summary: %s", exc)
             yield self._step("summary", "Final Strategy Report", summary)
             return json.dumps({"status": "done"}), True
 
@@ -464,6 +543,13 @@ class AimlScientist(BaseAgent):
                 a if a.strip() else normalised[i].get("recommendation", "")
                 for i, a in enumerate(answers)
             ]
+
+        session = getattr(self._ctx, "session", None)
+        if session is not None:
+            try:
+                session.patch_ask_answers(ask_step.index, list(answers))
+            except Exception as exc:  # pragma: no cover — defensive
+                log.warning("Could not persist ask answers: %s", exc)
 
         formatted = "\n".join(
             f"Q{i+1}: {q['question']}\n"

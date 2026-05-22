@@ -38,6 +38,7 @@ _FE_PARAM_KEYS = frozenset({
     "agg",                # create_rolling_features
     "freq",               # dense_panel
     "fill_value",         # dense_panel
+    "code",               # execute_python
 })
 # Operations that require params at all — used to escalate the missing-params warning.
 _OPS_REQUIRING_PARAMS = frozenset({
@@ -45,7 +46,7 @@ _OPS_REQUIRING_PARAMS = frozenset({
     "bin_numeric", "interaction_features", "polynomial_features",
     "target_log_transform", "groupby_aggregate", "rename_columns",
     "dense_panel", "create_lag_features", "create_rolling_features",
-    "create_lead_target",
+    "create_lead_target", "execute_python",
 })
 
 
@@ -121,6 +122,14 @@ Time-series feature engineering (REQUIRED for proper forecasting):
                           target_column="qty_lead_1" using time_column for
                           chronological backtest.
 
+Custom code:
+  • execute_python — Run arbitrary Python on the dataframe.
+                     params.code: Python string. 'df' is the input DataFrame.
+                     Mutate or reassign 'df' and it will be saved as the output.
+                     Only pandas (pd) and numpy (np) are pre-imported.
+                     Example: "df['ratio'] = df['a'] / df['b'].replace(0, np.nan)"
+                     Use for any transformation not covered by the operations above.
+
 TYPICAL FORECASTING PIPELINE
   1. groupby_aggregate  → monthly (or weekly) panel
   2. dense_panel        → zero-fill missing SKU-month combinations
@@ -172,6 +181,7 @@ def _tools() -> list[dict]:
                                 "groupby_aggregate", "rename_columns",
                                 "dense_panel", "create_lag_features",
                                 "create_rolling_features", "create_lead_target",
+                                "execute_python",
                             ],
                         },
                         "params": {"type": "object"},
@@ -714,5 +724,31 @@ def _apply_operation(
             f"Added {len(added)} lead target(s): {added} "
             f"(dropped {dropped} tail rows with no future observation)"
         )
+
+    if operation == "execute_python":
+        code = (params.get("code") or "").strip()
+        if not code:
+            return None, "params.code is required — provide Python code that operates on 'df'."
+        # Execute in a restricted namespace with only pandas and numpy available.
+        # 'df' is exposed as a copy; reassigning df or mutating it in-place both work.
+        local_ns: dict = {"df": df.copy(), "pd": pd, "np": np}
+        try:
+            exec(compile(code, "<custom_fe>", "exec"), local_ns)  # noqa: S102
+        except Exception as exc:
+            return None, f"Python code execution failed: {exc}"
+        result_df = local_ns.get("df")
+        if not isinstance(result_df, pd.DataFrame):
+            return None, "Code must leave 'df' as a pandas DataFrame."
+        if result_df.empty:
+            return None, "Code produced an empty DataFrame."
+        added = len(result_df.columns) - len(df.columns)
+        removed = len(df) - len(result_df)
+        detail = (
+            f"Custom Python: {len(result_df)} rows × {len(result_df.columns)} cols"
+            + (f" (+{added} cols)" if added > 0 else "")
+            + (f" (-{abs(added)} cols)" if added < 0 else "")
+            + (f" (-{removed} rows)" if removed > 0 else "")
+        )
+        return result_df, detail
 
     return None, f"Unknown operation: {operation}"

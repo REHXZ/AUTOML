@@ -21,8 +21,14 @@ from aiml_discovery.ai_autopilot import AiAutopilot, AutopilotStep
 from aiml_discovery.config import APP_NAME, PROJECT_HOME, UPLOAD_TYPES
 from aiml_discovery.diagnostics import build_diagnostic_figures
 from aiml_discovery.ingestion import load_dataset, list_sqlite_tables
+from aiml_discovery.notebook_export import build_notebook, serialize_notebook
 from aiml_discovery.profiling import profile_dataframe
 from aiml_discovery.reporting import build_markdown_report
+from aiml_discovery.session_store import (
+    delete_session,
+    list_sessions,
+    load_session,
+)
 from aiml_discovery.storage import DatasetInfo, ProjectInfo, ProjectStore
 from aiml_discovery.training import TrainingSettings, train_automl, train_automl_stream
 
@@ -583,6 +589,9 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
     if saved_pid and saved_pid != project.id:
         _reset_autopilot()
 
+    # ── Past sessions (persisted on disk) ───────────────────────────────
+    _render_past_sessions(store, project, api_key)
+
     # ── Phase state machine ──────────────────────────────────────────────
     phase = st.session_state.get("ap_phase", "idle")
 
@@ -611,6 +620,7 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
             st.session_state["ap_pending"] = None
             st.session_state["ap_pending_answers"] = None
             st.session_state["ap_project_id"] = project.id
+            st.session_state["ap_session_id"] = autopilot.session_id
             st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
@@ -668,7 +678,9 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
         if next_phase == "asking":
             st.rerun()
         elif next_phase == "done":
-            _render_autopilot_results(st.session_state.get("ap"))
+            # Re-render so the chat input and download button appear without
+            # waiting for the next interaction.
+            st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
     # ASKING — show question form, wait for user answers
@@ -739,14 +751,29 @@ def render_ai_autopilot(store: ProjectStore, project: ProjectInfo) -> None:
             st.rerun()
 
     # ════════════════════════════════════════════════════════════════════
-    # DONE — show full log and results
+    # DONE — show full log and results + follow-up chat
     # ════════════════════════════════════════════════════════════════════
     elif phase == "done":
         steps = st.session_state.get("ap_steps", [])
         with st.expander(f"Full activity log — {len(steps)} step(s)", expanded=False):
             for s in steps:
                 _render_step_compact(s)
-        _render_autopilot_results(st.session_state.get("ap"))
+        autopilot: AiAutopilot | None = st.session_state.get("ap")
+        _render_autopilot_results(autopilot, store=store, project=project)
+
+        if autopilot is not None:
+            st.divider()
+            st.markdown("### Keep the conversation going")
+            st.caption(
+                "Ask follow-up questions or request more work — the Scientist "
+                "and its sub-agents will pick up exactly where they left off."
+            )
+            followup = st.chat_input("Ask a follow-up…")
+            if followup:
+                st.session_state["ap_gen"] = autopilot.continue_with(followup)
+                st.session_state["ap_phase"] = "running"
+                st.session_state["ap_pending_answers"] = None
+                st.rerun()
 
 
 # ── Step renderers ───────────────────────────────────────────────────────────
@@ -869,8 +896,14 @@ def _render_step_compact(step: AutopilotStep) -> None:
             st.markdown(step.detail)
 
 
-def _render_autopilot_results(autopilot: AiAutopilot | None) -> None:
-    """Render new datasets, training results and strategy report."""
+def _render_autopilot_results(
+    autopilot: AiAutopilot | None,
+    *,
+    store: ProjectStore | None = None,
+    project: ProjectInfo | None = None,
+) -> None:
+    """Render new datasets, training results, strategy report, and the
+    downloadable Jupyter notebook for the session."""
     if autopilot is None:
         return
 
@@ -889,7 +922,7 @@ def _render_autopilot_results(autopilot: AiAutopilot | None) -> None:
                 ]
             ),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 
     if autopilot.training_runs:
@@ -904,17 +937,218 @@ def _render_autopilot_results(autopilot: AiAutopilot | None) -> None:
             }
             row.update({k: round(v, 4) for k, v in r.get("best_metrics", {}).items()})
             rows.append(row)
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
     if autopilot.strategy_summary:
         st.subheader("Final Strategy Report")
         st.markdown(autopilot.strategy_summary)
 
+    if store is not None and project is not None and autopilot.session_id:
+        _render_notebook_download(
+            store,
+            project,
+            autopilot.session_id,
+            ui_label="⬇ Download as Jupyter notebook (.ipynb)",
+        )
+
+
+# ── Cached session / notebook helpers ────────────────────────────────────────
+#
+# Streamlit reruns the whole script on every interaction. For long autopilot
+# sessions (many steps, many Plotly figures, large LLM message history) the
+# raw load_session + build_notebook calls become expensive enough to block the
+# event loop and trip the websocket keepalive. Caching keyed by
+# (project_id, session_id, updated_at, step_count) means each session is read
+# and serialised at most once per state change.
+
+
+@st.cache_resource(show_spinner="Loading autopilot session…")
+def _cached_loaded_session(
+    project_root: str,
+    project_id: str,
+    session_id: str,
+    updated_at: str,
+    step_count: int,
+):
+    store = ProjectStore(project_root)
+    return load_session(store, project_id, session_id)
+
+
+@st.cache_data(show_spinner="Building Jupyter notebook…")
+def _cached_notebook_bytes(
+    project_root: str,
+    project_id: str,
+    session_id: str,
+    updated_at: str,
+    step_count: int,
+) -> bytes:
+    store = ProjectStore(project_root)
+    project = store.get_project(project_id)
+    loaded = _cached_loaded_session(
+        project_root, project_id, session_id, updated_at, step_count
+    )
+    notebook = build_notebook(project, loaded, store)
+    return serialize_notebook(notebook)
+
+
+def _session_cache_key(store: ProjectStore, project_id: str, session_id: str):
+    """Return the (updated_at, step_count) tuple used for cache invalidation."""
+    for record in list_sessions(store, project_id):
+        if record.session_id == session_id:
+            return record.updated_at, record.step_count
+    return "", 0
+
+
+def _render_notebook_download(
+    store: ProjectStore,
+    project: ProjectInfo,
+    session_id: str,
+    *,
+    ui_label: str = "⬇ Download .ipynb",
+    button_key_prefix: str = "dl_ipynb",
+) -> None:
+    """Two-step "Build → Download" so we never serialise a notebook unless the
+    user explicitly asks for it. The build is cached so repeated downloads of
+    the same session are instant."""
+    prep_key = f"ap_prep_ipynb_{session_id}"
+    if not st.session_state.get(prep_key):
+        if st.button(
+            "🛠 Build notebook (.ipynb)",
+            key=f"{button_key_prefix}_build_{session_id}",
+        ):
+            st.session_state[prep_key] = True
+            st.rerun()
+        return
+
+    try:
+        updated_at, step_count = _session_cache_key(store, project.id, session_id)
+        data = _cached_notebook_bytes(
+            str(store.root), project.id, session_id, updated_at, step_count
+        )
+    except Exception as exc:
+        st.warning(f"Could not build notebook export: {exc}")
+        return
+
+    st.download_button(
+        ui_label,
+        data=data,
+        file_name=f"{project.id}_{session_id}.ipynb",
+        mime="application/x-ipynb+json",
+        key=f"{button_key_prefix}_dl_{session_id}",
+    )
+
 
 def _reset_autopilot() -> None:
     for key in ("ap", "ap_gen", "ap_steps", "ap_phase", "ap_pending",
-                "ap_pending_answers", "ap_project_id"):
+                "ap_pending_answers", "ap_project_id", "ap_session_id"):
         st.session_state.pop(key, None)
+
+
+def _render_past_sessions(
+    store: ProjectStore, project: ProjectInfo, api_key: str
+) -> None:
+    """Show the list of persisted autopilot sessions for this project."""
+    try:
+        sessions = list_sessions(store, project.id)
+    except Exception as exc:
+        st.warning(f"Could not list saved sessions: {exc}")
+        return
+
+    if not sessions:
+        return
+
+    active_id = st.session_state.get("ap_session_id")
+    with st.expander(
+        f"📚 Past autopilot sessions — {len(sessions)} saved", expanded=False
+    ):
+        for record in sessions:
+            label = record.title or record.session_id
+            status_badge = {
+                "complete": "✅",
+                "running": "⏳",
+                "idle": "💤",
+                "interrupted": "⚠️",
+            }.get(record.status, "•")
+            is_active = (record.session_id == active_id)
+            header = (
+                f"{status_badge} **{label}** — "
+                f"{record.step_count} step(s) · `{record.status}` · {record.updated_at[:19]}"
+                + ("  ← _currently open_" if is_active else "")
+            )
+            st.markdown(header)
+            cols = st.columns([1, 1, 6])
+            with cols[0]:
+                if st.button(
+                    "Open" if not is_active else "Reload",
+                    key=f"ap_open_{record.session_id}",
+                    disabled=not api_key,
+                ):
+                    _load_autopilot_session(
+                        api_key, store, project, record.session_id
+                    )
+                    st.rerun()
+            with cols[1]:
+                if st.button("Delete", key=f"ap_del_{record.session_id}"):
+                    try:
+                        delete_session(store, project.id, record.session_id)
+                        if is_active:
+                            _reset_autopilot()
+                        # Drop any cached blobs tied to this session.
+                        _cached_loaded_session.clear()
+                        _cached_notebook_bytes.clear()
+                        st.session_state.pop(
+                            f"ap_prep_ipynb_{record.session_id}", None
+                        )
+                    except Exception as exc:
+                        st.error(f"Delete failed: {exc}")
+                    st.rerun()
+            _render_notebook_download(
+                store,
+                project,
+                record.session_id,
+                ui_label="⬇ Download this session as .ipynb",
+                button_key_prefix=f"past_ipynb_{record.session_id}",
+            )
+            st.divider()
+
+
+def _load_autopilot_session(
+    api_key: str,
+    store: ProjectStore,
+    project: ProjectInfo,
+    session_id: str,
+) -> None:
+    """Rehydrate an autopilot session into Streamlit state for browsing and
+    continuing the conversation. Uses the cached loader so reopening the same
+    session a second time is instant."""
+    if not api_key:
+        st.warning("Add an OpenAI API key first.")
+        return
+    try:
+        updated_at, step_count = _session_cache_key(store, project.id, session_id)
+        loaded = _cached_loaded_session(
+            str(store.root), project.id, session_id, updated_at, step_count
+        )
+    except Exception as exc:
+        st.error(f"Could not load session: {exc}")
+        return
+
+    autopilot = AiAutopilot(
+        api_key=api_key,
+        project_id=project.id,
+        store=store,
+        session_id=session_id,
+        preloaded_session=loaded,
+    )
+
+    st.session_state["ap"] = autopilot
+    st.session_state["ap_gen"] = None
+    st.session_state["ap_steps"] = list(loaded.steps)
+    st.session_state["ap_phase"] = "done"
+    st.session_state["ap_pending"] = None
+    st.session_state["ap_pending_answers"] = None
+    st.session_state["ap_project_id"] = project.id
+    st.session_state["ap_session_id"] = session_id
 
 
 if __name__ == "__main__":

@@ -84,6 +84,50 @@ FINISH WITH done(summary)
   • rationale citing concrete metrics
   • concerns array if you suspect leakage or unstable training
 
+AVAILABLE MODELS (pass names verbatim in include_models to select a subset)
+  Classification:
+    Baseline (Majority), Logistic Regression, SGD Classifier, Linear SVC,
+    Gaussian Naive Bayes, Bernoulli Naive Bayes, Linear Discriminant Analysis,
+    Quadratic Discriminant Analysis, Decision Tree, Extra Trees,
+    Random Forest, AdaBoost, Gradient Boosting, Hist Gradient Boosting,
+    K-Nearest Neighbors, SVC (RBF), MLP, Bagging,
+    XGBoost*, LightGBM*, CatBoost*          (* installed automatically if present)
+
+  Regression:
+    Baseline (Mean), Linear Regression, Ridge, Lasso, ElasticNet,
+    Bayesian Ridge, Huber Regressor, SGD Regressor, Decision Tree,
+    Extra Trees, Random Forest, AdaBoost, Gradient Boosting,
+    Hist Gradient Boosting, K-Nearest Neighbors, Linear SVR, SVR (RBF),
+    MLP, Bagging,
+    XGBoost*, LightGBM*, CatBoost*
+
+  Speed guide (approximate, scales with dataset size):
+    Fast   → Baseline, Linear*, Lasso, Ridge, ElasticNet, Bayesian Ridge,
+              Naive Bayes, LDA, Decision Tree, Hist Gradient Boosting,
+              SGD*, Linear SVR / Linear SVC
+    Medium → Random Forest, Extra Trees, AdaBoost, Gradient Boosting,
+              K-Nearest Neighbors, XGBoost, LightGBM, CatBoost, Bagging
+    Slow   → SVR (RBF), SVC (RBF), MLP  [avoid on > 50k rows]
+    QDA    → can fail with many features / small classes
+
+  For large datasets (> 50k rows), pass include_models to skip slow models.
+  For small datasets (< 5k rows), all models are safe.
+
+CUSTOM MODELS
+  Pass custom_models as a list of specs:
+    [{"name": "My XGBoost", "class": "xgboost.XGBRegressor",
+      "params": {"n_estimators": 300, "learning_rate": 0.03, "max_depth": 5}}]
+  Any sklearn-compatible estimator is valid. The class must be importable.
+  Custom models run AFTER standard ones and are always included.
+
+USE THE RESEARCHER WHEN YOU NEED EXTERNAL KNOWLEDGE
+  Call spawn_researcher if you need to:
+    – Look up best-known benchmarks for the task type / dataset size.
+    – Verify whether a particular technique or hyperparameter choice
+      is appropriate for the problem domain.
+    – Investigate an unusual pattern you see in the diagnostics.
+  Pass a specific, focused research question.
+
 You have authority to call charts and retrain. You do NOT have
 authority to fabricate metrics — if something fails, say so plainly
 and propose the fix.
@@ -147,6 +191,35 @@ def _tools() -> list[dict]:
                                 "rows sorted by this column, last test_size "
                                 "fraction held out. Required for honest "
                                 "forecasting backtest."
+                            ),
+                        },
+                        "include_models": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "Optional subset of standard model names to run. "
+                                "If omitted, ALL available models run. Use to skip "
+                                "slow models on large datasets, e.g. "
+                                "[\"Hist Gradient Boosting\", \"Random Forest\", \"LightGBM\"]."
+                            ),
+                        },
+                        "custom_models": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "class": {
+                                        "type": "string",
+                                        "description": "Dotted import path, e.g. 'xgboost.XGBRegressor'.",
+                                    },
+                                    "params": {"type": "object"},
+                                },
+                                "required": ["class"],
+                            },
+                            "description": (
+                                "Additional sklearn-compatible models to include. "
+                                "These run alongside (or instead of) standard models."
                             ),
                         },
                     },
@@ -227,6 +300,27 @@ def _tools() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "spawn_researcher",
+                "description": (
+                    "Delegate a research question to the Researcher Agent, which will "
+                    "search the web via SearXNG. Use this to look up benchmarks, "
+                    "technique guidance, or domain context relevant to the modeling task."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "Specific research question to investigate.",
+                        }
+                    },
+                    "required": ["question"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "done",
                 "description": "Finish modeling. Report the runs you executed.",
                 "parameters": {
@@ -278,14 +372,7 @@ class ModelingAgent(BaseAgent):
             "in train_model. Visualise with create_model_chart."
         )
 
-        yield from self.run_llm_loop(
-            system_prompt=_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            tools=_tools(),
-            dispatch=self._dispatch,
-            max_iterations=30,
-            thought_title="Modeling Agent — Reasoning",
-        )
+        yield from self._drive_loop(user_prompt)
 
         if self._run_ids:
             self._summary.setdefault("run_ids", self._run_ids)
@@ -296,6 +383,86 @@ class ModelingAgent(BaseAgent):
         )
         yield self._step("agent_end", "Modeling Agent finished", "")
         return self._summary or {"rationale": "Modeling agent ended without summary."}
+
+    # ------------------------------------------------------------------
+    # Custom loop so spawn_researcher can yield from the sub-agent.
+    # ------------------------------------------------------------------
+
+    def _drive_loop(
+        self, user_prompt: str
+    ) -> Generator[AutopilotStep, list[str] | None, None]:
+        from .researcher_agent import ResearcherAgent
+
+        messages: list[dict] = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        tools = _tools()
+
+        for _ in range(30):
+            response = self._client.chat.completions.create(
+                model=self._deployment,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+            )
+            choice = response.choices[0]
+
+            assistant_msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": choice.message.content,
+            }
+            if choice.message.tool_calls:
+                assistant_msg["tool_calls"] = [
+                    tc.model_dump() for tc in choice.message.tool_calls
+                ]
+            messages.append(assistant_msg)
+
+            if choice.message.content:
+                yield self._step("thought", "Modeling Agent — Reasoning", choice.message.content)
+
+            if choice.finish_reason == "stop":
+                break
+            if choice.finish_reason != "tool_calls":
+                continue
+
+            terminate = False
+            for tc in choice.message.tool_calls:
+                name = tc.function.name
+                args: dict[str, Any] = json.loads(tc.function.arguments or "{}")
+
+                log.info("Modeling tool_call | name=%s", name)
+                yield self._step(
+                    "tool_call",
+                    f"[Modeling Agent] {name}",
+                    json.dumps(args, indent=2),
+                )
+
+                if name == "spawn_researcher":
+                    question = (args.get("question") or "").strip()
+                    sub = ResearcherAgent(self._client, self._deployment, self._ctx)
+                    sub_summary = yield from sub.run(question)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(to_json_safe(sub_summary)),
+                    })
+                else:
+                    tool_content, extra_step, terminate_flag = self._dispatch(name, args, tc.id)
+                    if extra_step is not None:
+                        yield extra_step
+                    if tool_content is not None:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": tool_content,
+                        })
+                    if terminate_flag:
+                        terminate = True
+                        break
+
+            if terminate:
+                break
 
     # ------------------------------------------------------------------
     # Dispatch
@@ -435,13 +602,20 @@ class ModelingAgent(BaseAgent):
             random_state=int(args.get("random_state", 42)),
             time_column=time_column,
         )
+        include_models = args.get("include_models") or None
+        custom_models = args.get("custom_models") or None
         split_mode = "chronological" if time_column else "random"
         log.info(
-            "train_model | dataset=%s target=%s split=%s time_column=%r test_size=%.2f",
+            "train_model | dataset=%s target=%s split=%s time_column=%r test_size=%.2f include=%s custom=%s",
             ds.name, target, split_mode, time_column, settings.test_size,
+            include_models or "all", len(custom_models) if custom_models else 0,
         )
         try:
-            result, model = train_automl(loaded.dataframe, settings)
+            result, model = train_automl(
+                loaded.dataframe, settings,
+                custom_models=custom_models,
+                include_models=include_models,
+            )
         except Exception as exc:
             log.error("train_model | FAILED dataset=%s target=%s error=%s", ds.name, target, exc)
             return json.dumps({"error": f"Training failed: {exc}"}), None, False
