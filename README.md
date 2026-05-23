@@ -28,6 +28,26 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Run the API
+
+```powershell
+uvicorn aiml_discovery.api:app --reload
+```
+
+The OpenAPI docs are available at:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Common AI Autopilot endpoints:
+
+- `POST /api/projects/{project_id}/autopilot/sessions` starts a run.
+- `GET /api/projects/{project_id}/autopilot/sessions/{session_id}/events` streams Server-Sent Events until the run pauses or completes.
+- `POST /api/projects/{project_id}/autopilot/sessions/{session_id}/answers` submits answers when the run is waiting for input.
+- `POST /api/projects/{project_id}/autopilot/sessions/{session_id}/messages` sends follow-up work to a completed session.
+- `GET /api/projects/{project_id}/autopilot/sessions/{session_id}/notebook` downloads the session notebook.
+
 By default, project data is stored outside the repository at:
 
 ```text
@@ -41,4 +61,3 @@ Set `AIML_DISCOVERY_HOME` to use another local folder.
 ```powershell
 pytest
 ```
-

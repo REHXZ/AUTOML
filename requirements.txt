@@ -1,4 +1,6 @@
 streamlit>=1.36
+fastapi>=0.111
+uvicorn[standard]>=0.30
 pandas>=2.2
 scikit-learn>=1.4
 joblib>=1.4

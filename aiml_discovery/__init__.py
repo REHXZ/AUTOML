@@ -1,6 +1,7 @@
 """Service layer for the AIML Discovery Training UI."""
 
 __all__ = [
+    "api",
     "config",
     "ingestion",
     "profiling",
@@ -8,4 +9,3 @@ __all__ = [
     "storage",
     "training",
 ]
-
