@@ -110,6 +110,10 @@ class AiAutopilot:
     def is_resumed(self) -> bool:
         return self._is_resumed
 
+    def set_status(self, status: str) -> None:
+        """Persist a session status update for API/background runners."""
+        self._session_writer.set_status(status)
+
     # ------------------------------------------------------------------
     # Generator surfaces used by app.py
     # ------------------------------------------------------------------

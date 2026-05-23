@@ -27,6 +27,29 @@ All agents share a single `AgentContext` (notebook, datasets, training runs) and
 
 ---
 
+## API Surface
+
+`aiml_discovery/api.py` exposes the same `AiAutopilot` engine over HTTP with FastAPI. Start it locally with:
+
+```powershell
+uvicorn aiml_discovery.api:app --reload
+```
+
+The API uses the same local project store and session files as the Streamlit UI. A run is session-based:
+
+1. `POST /api/projects/{project_id}/autopilot/sessions` creates a session and starts a background worker.
+2. `GET /api/projects/{project_id}/autopilot/sessions/{session_id}` returns the persisted steps, status, notebook, datasets, training runs, and final strategy summary.
+3. `GET /api/projects/{project_id}/autopilot/sessions/{session_id}/events` streams Server-Sent Events for new steps until the run waits for input, completes, or errors.
+4. `POST /api/projects/{project_id}/autopilot/sessions/{session_id}/answers` resumes a run paused by `ask_user`.
+5. `POST /api/projects/{project_id}/autopilot/sessions/{session_id}/messages` sends follow-up work after a session has completed.
+6. `GET /api/projects/{project_id}/autopilot/sessions/{session_id}/notebook` downloads the generated Jupyter notebook.
+
+`OPENAI_API_KEY` can be loaded from `.env`, or `api_key` can be supplied in the start/follow-up request body.
+
+Note: sessions are persisted to disk, but an active `ask_user` pause keeps the live Python generator in the API process. If the API process restarts while a run is waiting for answers, start a new run or continue from a completed/idle session.
+
+---
+
 ## How a Run Works
 
 ### 1. Start or Resume

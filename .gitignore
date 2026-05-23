@@ -12,3 +12,4 @@ env/
 local_projects/
 *.joblib
 *.log
+.tmp_pytest_*/
