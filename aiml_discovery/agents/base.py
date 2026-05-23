@@ -181,23 +181,28 @@ class AgentContext:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Azure OpenAI client factory
+# OpenAI client factory — uses Azure if OPENAI_API_BASE is set, else standard OpenAI
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 def build_azure_client(api_key: str):
-    from openai import AzureOpenAI
-
-    api_base = os.environ.get("OPENAI_API_BASE", "")
-    return AzureOpenAI(
-        api_key=api_key,
-        azure_endpoint=api_base,
-        api_version="2024-12-01-preview",
-    )
+    api_base = os.environ.get("OPENAI_API_BASE", "").strip()
+    if api_base:
+        from openai import AzureOpenAI
+        return AzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=api_base,
+            api_version="2024-12-01-preview",
+        )
+    from openai import OpenAI
+    return OpenAI(api_key=api_key)
 
 
 def get_deployment() -> str:
-    return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4")
+    api_base = os.environ.get("OPENAI_API_BASE", "").strip()
+    if api_base:
+        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4-mini")
+    return os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

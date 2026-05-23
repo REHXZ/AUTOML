@@ -11,4 +11,4 @@ env/
 .aiml_discovery/
 local_projects/
 *.joblib
-
+*.log
