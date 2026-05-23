@@ -64,6 +64,7 @@ def step_to_jsonable(step: AutopilotStep) -> dict[str, Any]:
         "detail": step.detail,
         "data": to_json_safe(raw_data),
         "agent": step.agent,
+        "phase": step.phase,
     }
 
 
@@ -87,6 +88,7 @@ def step_from_jsonable(payload: dict[str, Any]) -> AutopilotStep:
         detail=str(payload.get("detail", "")),
         data=data,
         agent=str(payload.get("agent", "scientist")),
+        phase=str(payload.get("phase", "business_understanding")),
     )
 
 

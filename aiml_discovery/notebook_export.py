@@ -1,12 +1,22 @@
 """Jupyter notebook export for a completed (or interrupted) autopilot session.
 
-Replays an autopilot session into a runnable ``.ipynb``:
+Produces a *structured* handover notebook organised by AIML lifecycle phase
+(modified CRISP-DM: Business Understanding → Data Understanding → Data
+Preparation → Modeling → Evaluation → Iteration). A human can open the
+notebook and:
 
-  • Markdown cells narrate the reasoning, agent transitions, and findings.
-  • Code cells reload datasets via ``pd.read_csv(...)``, materialise plotly
-    figures from their persisted JSON specs, and ``joblib.load`` the trained
-    models so the recipient can predict immediately.
-  • The final strategy report from the Scientist is appended verbatim.
+  • read the narrative for each phase,
+  • re-run the runnable code cells to reload datasets, re-create derived
+    feature tables, and joblib.load the best trained model,
+  • inspect the diagnostic charts inline,
+  • drop into the full chronological agent transcript in the appendix if
+    they want the raw blow-by-blow.
+
+The notebook builder reconstructs runnable code from session artefacts
+(``new_datasets``, ``training_runs``, ``store.list_runs``) and from the
+arguments captured on the ``tool_call`` / ``new_dataset`` / ``training``
+steps. Falls back to ``pd.read_csv`` whenever exact reconstruction is not
+possible.
 """
 
 from __future__ import annotations
@@ -18,9 +28,9 @@ from typing import Any
 import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
-from .agents.base import AutopilotStep
+from .agents.base import PHASE_BY_ID, PHASE_IDS, PHASES, AutopilotStep
 from .session_store import LoadedSession
-from .storage import ProjectInfo, ProjectStore
+from .storage import DatasetInfo, ProjectInfo, ProjectStore
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +54,11 @@ def _code(src: str) -> nbformat.NotebookNode:
     return new_code_cell(src)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Header / setup
+# ──────────────────────────────────────────────────────────────────────────────
+
+
 def _header_cell(project: ProjectInfo, session: LoadedSession) -> nbformat.NotebookNode:
     parts = [
         f"# AI Autopilot Session — {project.name}",
@@ -58,64 +73,553 @@ def _header_cell(project: ProjectInfo, session: LoadedSession) -> nbformat.Noteb
     return _md("\n".join(parts))
 
 
+def _lifecycle_overview_cell() -> nbformat.NotebookNode:
+    lines = [
+        "## How this notebook is organised",
+        "",
+        "This is a handover notebook structured around the modified CRISP-DM",
+        "AIML lifecycle. Each section below corresponds to a lifecycle phase",
+        "and contains a narrative of what the agents did, runnable code cells",
+        "that re-create the work, and any diagnostic charts produced.",
+        "",
+    ]
+    for i, phase in enumerate(PHASES, start=1):
+        lines.append(f"{i}. **{phase['title']}** — {phase['description']}")
+    lines += [
+        "",
+        "The full chronological agent transcript lives in the appendix at the",
+        "bottom of the notebook if you need to audit individual agent calls.",
+    ]
+    return _md("\n".join(lines))
+
+
 def _setup_cell() -> nbformat.NotebookNode:
     return _code(
-        "# Notebook environment\n"
+        "# Environment setup — re-run before any phase below.\n"
         "import json\n"
         "import joblib\n"
+        "import numpy as np\n"
         "import pandas as pd\n"
         "import plotly.io as pio\n"
+        "\n"
+        "pd.set_option('display.max_columns', 80)\n"
     )
 
 
-def _step_to_cells(step: AutopilotStep) -> list[nbformat.NotebookNode]:
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers — pulling info out of step.data
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _safe_data(step: AutopilotStep) -> dict[str, Any]:
+    return dict(step.data or {})
+
+
+def _parse_tool_args(step: AutopilotStep) -> dict[str, Any]:
+    """Recover the JSON args from a tool_call step's detail string."""
+    try:
+        return json.loads(step.detail)
+    except (json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _figure_from_step(step: AutopilotStep) -> str | None:
+    """Return the figure JSON for a step that contains one, or None."""
+    data = _safe_data(step)
+    if "figure_json" in data:
+        return data["figure_json"]
+    fig = data.get("figure")
+    if fig is None:
+        return None
+    try:
+        return fig.to_json()
+    except Exception:  # pragma: no cover
+        return None
+
+
+def _python_repr(value: Any) -> str:
+    """Render a value as a Python literal safe to paste into a code cell."""
+    try:
+        return repr(value)
+    except Exception:
+        return "None"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Narrative builders
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _phase_narrative(
+    phase: dict[str, str], steps: list[AutopilotStep]
+) -> nbformat.NotebookNode:
+    """Build a markdown summary cell for one lifecycle phase."""
+    lines = [f"## {phase['title']}", "", f"_{phase['description']}_", ""]
+
+    # Phase transition rationales (often more useful than raw thoughts).
+    transitions = [s for s in steps if s.kind == "phase_transition"]
+    for tr in transitions:
+        data = _safe_data(tr)
+        rationale = data.get("rationale") or tr.detail
+        if rationale:
+            lines.append(f"> **Why this phase:** {rationale}")
+            lines.append("")
+
+    # Which agents worked in this phase.
+    agents_used: list[str] = []
+    for s in steps:
+        if s.kind == "agent_start":
+            label = _AGENT_LABELS.get(s.agent, s.agent.title())
+            if label not in agents_used:
+                agents_used.append(label)
+    if agents_used:
+        lines.append("**Agents involved:** " + ", ".join(agents_used))
+        lines.append("")
+
+    # Observations — the running narrative for this phase.
+    observations = [s for s in steps if s.kind == "observation"]
+    if observations:
+        lines.append("**Notebook observations recorded in this phase:**")
+        lines.append("")
+        for obs in observations:
+            label = _AGENT_LABELS.get(obs.agent, obs.agent.title())
+            note = obs.detail.strip() or obs.title
+            if note:
+                lines.append(f"- _{label}_: {note}")
+        lines.append("")
+
+    # Review issues / improvements when this is the evaluation phase.
+    reviews = [s for s in steps if s.kind == "review"]
+    if reviews:
+        lines.append("**Review findings:**")
+        lines.append("")
+        for rv in reviews:
+            data = _safe_data(rv)
+            if data.get("issues"):
+                lines.append("- Issues:")
+                lines += [f"    - {x}" for x in data["issues"]]
+            if data.get("improvements_to_try"):
+                lines.append("- Improvements to try:")
+                lines += [f"    - {x}" for x in data["improvements_to_try"]]
+        lines.append("")
+
+    # User Q&A in this phase.
+    asks = [s for s in steps if s.kind == "ask"]
+    if asks:
+        lines.append("**User Q&A in this phase:**")
+        lines.append("")
+        for ask in asks:
+            data = _safe_data(ask)
+            questions = data.get("questions") or []
+            answers = data.get("answers") or []
+            for i, q in enumerate(questions):
+                if isinstance(q, dict):
+                    q_text = q.get("question", "")
+                    rec = q.get("recommendation", "")
+                else:
+                    q_text = str(q)
+                    rec = ""
+                lines.append(f"- **Q:** {q_text}")
+                if rec:
+                    lines.append(f"  - _Recommended:_ {rec}")
+                ans = answers[i] if i < len(answers) else ""
+                if ans:
+                    lines.append(f"  - **Answer:** {ans}")
+        lines.append("")
+
+    if len(lines) <= 4:
+        lines.append("_(no agent activity recorded in this phase)_")
+
+    return _md("\n".join(lines).rstrip())
+
+
+def _phase_charts(steps: list[AutopilotStep]) -> list[nbformat.NotebookNode]:
+    """Replay every chart yielded inside this phase as runnable cells."""
+    out: list[nbformat.NotebookNode] = []
+    for step in steps:
+        if step.kind != "chart":
+            continue
+        figure_json = _figure_from_step(step)
+        if not figure_json:
+            continue
+        title = step.title or "Chart"
+        out.append(_md(f"### Chart: {title}\n\n{step.detail}".rstrip()))
+        literal = json.dumps(figure_json)
+        out.append(_code(
+            f"_fig_spec = {literal}\n"
+            "fig = pio.from_json(_fig_spec)\n"
+            "fig"
+        ))
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Phase-specific runnable code
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _safe_varname(name: str) -> str:
+    cleaned = "".join(c if c.isalnum() else "_" for c in name).strip("_") or "df"
+    if cleaned[0].isdigit():
+        cleaned = f"_{cleaned}"
+    return cleaned
+
+
+def _business_understanding_code(
+    session: LoadedSession,
+) -> list[nbformat.NotebookNode]:
+    if not session.user_goal:
+        return []
+    return [_md(
+        "**Problem statement (from the user):**\n\n"
+        f"> {session.user_goal}"
+    )]
+
+
+def _data_understanding_code(
+    session: LoadedSession,
+    store: ProjectStore,
+    project: ProjectInfo,
+) -> list[nbformat.NotebookNode]:
+    """Re-load each ORIGINAL dataset and show shape + head + describe."""
+    originals = store.list_datasets(project.id) or []
+    # Filter out anything that was created during this session (those belong
+    # to data_preparation). Match by id.
+    new_ids = {d.id for d in session.new_datasets}
+    originals = [d for d in originals if d.id not in new_ids]
+    if not originals:
+        return []
+
+    cells: list[nbformat.NotebookNode] = [_md(
+        "### Reload the source datasets\n\n"
+        "These are the datasets that existed when the session started."
+    )]
+    for ds in originals:
+        var = _safe_varname(ds.name)
+        cells.append(_code(
+            f"# Source dataset: {ds.name} — {ds.row_count:,} rows × {ds.column_count} cols\n"
+            f"df_{var} = pd.read_csv(r{ds.file_path!r})\n"
+            f"print(df_{var}.shape)\n"
+            f"df_{var}.head()"
+        ))
+        cells.append(_code(f"df_{var}.describe(include='all').T"))
+    return cells
+
+
+def _data_preparation_code(
+    session: LoadedSession,
+    steps: list[AutopilotStep],
+) -> list[nbformat.NotebookNode]:
+    """Show every derived dataset that was created in this phase, with the
+    operation that created it (as captured on the tool_call step) and a
+    pd.read_csv to load the materialised CSV.
+    """
+    if not session.new_datasets:
+        return []
+
+    # Build an index: dataset_id → operation/rationale gleaned from
+    # `new_dataset` steps so we can attach context to each dataset cell.
+    new_ds_steps = {
+        _safe_data(s).get("dataset_id"): s
+        for s in steps
+        if s.kind == "new_dataset"
+    }
+    # Also collect FE tool_call args keyed by output dataset name when
+    # available — the args contain the params we'd need to truly replay the
+    # transformation in pandas.
+    fe_tool_calls: list[dict[str, Any]] = []
+    for s in steps:
+        if s.kind == "tool_call" and "create_derived_dataset" in s.title:
+            args = _parse_tool_args(s)
+            if args:
+                fe_tool_calls.append(args)
+
+    cells: list[nbformat.NotebookNode] = [_md(
+        "### Derived datasets created in this phase\n\n"
+        "Each block below corresponds to one Feature Engineering transformation. "
+        "The materialised CSV is loaded with `pd.read_csv` for convenience; the "
+        "original transformation parameters are shown above each load so you can "
+        "re-create the operation in your own pipeline if needed."
+    )]
+
+    for ds in session.new_datasets:
+        step = new_ds_steps.get(ds.id)
+        op = ""
+        rationale = ""
+        if step is not None:
+            data = _safe_data(step)
+            op = data.get("operation") or ""
+            rationale = data.get("rationale") or ""
+
+        # Find the matching tool_call args by new_name to surface params.
+        params_repr = "(params not captured)"
+        matched_args: dict[str, Any] = {}
+        for args in fe_tool_calls:
+            if args.get("new_name") == ds.name:
+                matched_args = args
+                break
+        if matched_args:
+            params_repr = json.dumps(matched_args, indent=2)
+
+        notes = []
+        if op:
+            notes.append(f"- **Operation:** `{op}`")
+        if rationale:
+            notes.append(f"- **Rationale:** {rationale}")
+        notes.append(f"- **Resulting shape:** {ds.row_count:,} rows × {ds.column_count} cols")
+        cells.append(_md(
+            f"#### `{ds.name}`\n\n"
+            + "\n".join(notes)
+            + "\n\n<details><summary>Show original FE call (params)</summary>\n\n"
+            + f"```json\n{params_repr}\n```\n\n</details>"
+        ))
+        var = _safe_varname(ds.name)
+        cells.append(_code(
+            f"df_{var} = pd.read_csv(r{ds.file_path!r})\n"
+            f"print(df_{var}.shape)\n"
+            f"df_{var}.head()"
+        ))
+    return cells
+
+
+def _modeling_code(
+    session: LoadedSession,
+    steps: list[AutopilotStep],
+    store: ProjectStore,
+    project: ProjectInfo,
+) -> list[nbformat.NotebookNode]:
+    """For each training run produced in this phase, emit code that reloads
+    the dataset, loads the saved model, and runs prediction on the test split.
+    """
+    if not session.training_runs:
+        return []
+
+    # Index full run metadata (including model_path) from the store.
+    all_runs = store.list_runs(project.id) or []
+    runs_by_id = {r.get("run_id"): r for r in all_runs}
+    datasets_by_id = {d.id: d for d in store.list_datasets(project.id) or []}
+    # Also include datasets created in this session (they may not be in the
+    # global list if the session is unfinished).
+    for d in session.new_datasets:
+        datasets_by_id.setdefault(d.id, d)
+
+    cells: list[nbformat.NotebookNode] = [_md(
+        "### Training runs in this phase\n\n"
+        "Each run below can be reloaded with `joblib.load`. The code re-creates "
+        "the same train/test split the Modeling Agent used so you can sanity-check "
+        "the metrics yourself or fit additional models on identical data."
+    )]
+
+    for run in session.training_runs:
+        run_id = run.get("run_id", "")
+        full = runs_by_id.get(run_id, {})
+        target = run.get("target") or full.get("target_column", "")
+        task = run.get("task_type") or full.get("task_type", "")
+        best_model = run.get("best_model") or full.get("best_model_name", "")
+        metrics = run.get("best_metrics") or full.get("best_metrics") or {}
+        dataset_id = run.get("dataset_id") or (full.get("dataset") or {}).get("id", "")
+        time_column = run.get("time_column") or (full.get("settings") or {}).get("time_column")
+        test_size = (full.get("settings") or {}).get("test_size", 0.2)
+        random_state = (full.get("settings") or {}).get("random_state", 42)
+        model_path = full.get("model_path", "")
+
+        ds = datasets_by_id.get(dataset_id)
+        dataset_label = ds.name if ds else run.get("dataset", "(unknown)")
+        var = _safe_varname(dataset_label)
+
+        metrics_md = ", ".join(f"`{k}={v}`" for k, v in metrics.items()) or "_(none)_"
+        header = [
+            f"#### Run `{run_id}` — {dataset_label}",
+            "",
+            f"- **Target:** `{target}`",
+            f"- **Task:** `{task}`",
+            f"- **Best model:** `{best_model}`",
+            f"- **Metrics:** {metrics_md}",
+        ]
+        if time_column:
+            header.append(
+                f"- **Split:** chronological by `{time_column}` "
+                f"(last {test_size:.0%} of rows = test set)"
+            )
+        else:
+            header.append(
+                f"- **Split:** random (`test_size={test_size}`, "
+                f"`random_state={random_state}`)"
+            )
+        cells.append(_md("\n".join(header)))
+
+        if not ds:
+            cells.append(_md(
+                "_Dataset could not be located in the project store — "
+                "skipping reload code._"
+            ))
+            continue
+
+        # Build the reproduction code cell.
+        lines = [
+            f"# Reload dataset and recreate the split used for run {run_id}",
+            f"df_{var} = pd.read_csv(r{ds.file_path!r})",
+        ]
+        if time_column:
+            lines += [
+                f"df_{var} = df_{var}.sort_values({time_column!r}).reset_index(drop=True)",
+                f"_n_test = int(len(df_{var}) * {test_size})",
+                f"_train = df_{var}.iloc[:-_n_test]",
+                f"_test = df_{var}.iloc[-_n_test:]",
+            ]
+        else:
+            lines += [
+                "from sklearn.model_selection import train_test_split",
+                f"_train, _test = train_test_split(df_{var}, "
+                f"test_size={test_size}, random_state={random_state})",
+            ]
+        if target:
+            lines += [
+                f"X_test = _test.drop(columns=[{target!r}])",
+                f"y_test = _test[{target!r}]",
+            ]
+        cells.append(_code("\n".join(lines)))
+
+        if model_path:
+            cells.append(_code(
+                f"# Load the trained model for run {run_id}\n"
+                f"model = joblib.load(r{model_path!r})\n"
+                "model"
+            ))
+            if target:
+                cells.append(_code(
+                    f"# Score on the held-out test set\n"
+                    f"preds = model.predict(X_test)\n"
+                    f"pd.DataFrame({{'y_true': y_test.values[:20], "
+                    f"'y_pred': preds[:20]}})"
+                ))
+        else:
+            cells.append(_md(
+                f"_Model path for run `{run_id}` was not recorded — "
+                "cannot auto-load._"
+            ))
+    return cells
+
+
+def _evaluation_code(
+    session: LoadedSession,
+) -> list[nbformat.NotebookNode]:
+    """A DataFrame comparing every training run side-by-side."""
+    if not session.training_runs:
+        return []
+    cells: list[nbformat.NotebookNode] = [_md(
+        "### Run leaderboard\n\n"
+        "All training runs from this session, side-by-side."
+    )]
+    rows_repr = json.dumps(
+        [
+            {
+                "run_id": r.get("run_id", ""),
+                "dataset": r.get("dataset", ""),
+                "target": r.get("target", ""),
+                "task_type": r.get("task_type", ""),
+                "best_model": r.get("best_model", ""),
+                "split_mode": r.get("split_mode", ""),
+                **{k: v for k, v in (r.get("best_metrics") or {}).items()},
+            }
+            for r in session.training_runs
+        ],
+        indent=2,
+    )
+    cells.append(_code(
+        f"_runs = {rows_repr}\n"
+        "leaderboard = pd.DataFrame(_runs)\n"
+        "leaderboard"
+    ))
+    return cells
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Per-phase section assembly
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _phase_section(
+    phase: dict[str, str],
+    steps: list[AutopilotStep],
+    session: LoadedSession,
+    store: ProjectStore,
+    project: ProjectInfo,
+) -> list[nbformat.NotebookNode]:
+    cells: list[nbformat.NotebookNode] = [_md("---")]
+    cells.append(_phase_narrative(phase, steps))
+
+    pid = phase["id"]
+    if pid == "business_understanding":
+        cells.extend(_business_understanding_code(session))
+    elif pid == "data_understanding":
+        cells.extend(_data_understanding_code(session, store, project))
+    elif pid == "data_preparation":
+        cells.extend(_data_preparation_code(session, steps))
+    elif pid == "modeling":
+        cells.extend(_modeling_code(session, steps, store, project))
+    elif pid == "evaluation":
+        cells.extend(_evaluation_code(session))
+    # `iteration` is narrative-only — no reproducible code to emit.
+
+    cells.extend(_phase_charts(steps))
+    return cells
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Appendix — full chronological transcript (the old behaviour, demoted)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _transcript_cells_for_step(step: AutopilotStep) -> list[nbformat.NotebookNode]:
     agent_label = _AGENT_LABELS.get(step.agent, step.agent.title())
+    phase_meta = PHASE_BY_ID.get(step.phase, {})
+    phase_label = phase_meta.get("title", step.phase)
+    prefix = f"Step {step.index} · _{phase_label}_ · **{agent_label}**"
+
+    if step.kind == "phase_transition":
+        data = _safe_data(step)
+        return [_md(
+            f"{prefix} — **Phase transition** "
+            f"(`{data.get('from_phase', '?')}` → `{data.get('to_phase', '?')}`)\n\n"
+            f"{step.detail}"
+        )]
 
     if step.kind == "thought":
         body = step.detail.strip()
         if not body:
             return []
-        return [_md(f"### Step {step.index} — {agent_label} reasoning\n\n{body}")]
+        return [_md(f"{prefix} — _reasoning_\n\n{body}")]
 
     if step.kind == "tool_call":
         args_preview = step.detail.strip()
         if len(args_preview) > 600:
             args_preview = args_preview[:600] + "\n…"
         return [_md(
-            f"**Step {step.index} — {agent_label} called** `{step.title}`\n\n"
+            f"{prefix} — called `{step.title}`\n\n"
             f"```json\n{args_preview}\n```"
         )]
 
     if step.kind == "tool_result":
-        return [_md(f"**Step {step.index} — Result:** {step.title}\n\n{step.detail}")]
+        return [_md(f"{prefix} — result: {step.title}\n\n{step.detail}")]
 
     if step.kind == "chart":
-        data = step.data or {}
-        figure_json = data.get("figure_json")
-        if figure_json is None:
-            figure = data.get("figure")
-            if figure is not None:
-                try:
-                    figure_json = figure.to_json()
-                except Exception:  # pragma: no cover
-                    figure_json = None
+        figure_json = _figure_from_step(step)
         cells: list[nbformat.NotebookNode] = [
-            _md(f"### Step {step.index} — Chart: {step.title}\n\n{step.detail}".rstrip())
+            _md(f"{prefix} — chart: {step.title}\n\n{step.detail}".rstrip())
         ]
         if figure_json:
             literal = json.dumps(figure_json)
             cells.append(_code(
-                f"_fig_spec = {literal}\n"
-                "fig = pio.from_json(_fig_spec)\n"
-                "fig"
+                f"_fig_spec = {literal}\npio.from_json(_fig_spec)"
             ))
         return cells
 
     if step.kind == "ask":
-        data = step.data or {}
-        questions = data.get("questions", []) or []
-        answers = data.get("answers", []) or []
-        lines = [f"### Step {step.index} — User Q&A"]
+        data = _safe_data(step)
+        questions = data.get("questions") or []
+        answers = data.get("answers") or []
+        lines = [f"{prefix} — User Q&A"]
         for i, q in enumerate(questions):
             if isinstance(q, dict):
                 q_text = q.get("question", "")
@@ -125,45 +629,33 @@ def _step_to_cells(step: AutopilotStep) -> list[nbformat.NotebookNode]:
                 rec = ""
             lines.append(f"\n**Q{i+1}.** {q_text}")
             if rec:
-                lines.append(f"\n_Scientist recommended:_ {rec}")
+                lines.append(f"\n_Recommended:_ {rec}")
             answer = answers[i] if i < len(answers) else "_(no answer recorded)_"
             lines.append(f"\n**Answer:** {answer}")
         return [_md("\n".join(lines))]
 
     if step.kind == "new_dataset":
-        data = step.data or {}
-        ds_id = data.get("dataset_id", "")
-        cells = [_md(
-            f"### Step {step.index} — New dataset created\n\n"
-            f"{step.title} — {step.detail}\n\n"
-            f"- dataset_id: `{ds_id}`"
+        data = _safe_data(step)
+        return [_md(
+            f"{prefix} — new dataset: {step.title}\n\n"
+            f"{step.detail}\n\n- dataset_id: `{data.get('dataset_id', '')}`"
         )]
-        return cells
 
     if step.kind == "training":
-        data = step.data or {}
-        summary = data.get("summary") or {}
-        lines = [f"### Step {step.index} — Training: {step.title}", "", step.detail or ""]
-        if summary:
-            best = summary.get("best_metrics") or {}
-            if best:
-                lines.append("")
-                lines.append("**Best metrics:**")
-                for k, v in best.items():
-                    lines.append(f"- {k}: {v}")
-        run_id = summary.get("run_id") if isinstance(summary, dict) else None
-        cells: list[nbformat.NotebookNode] = [_md("\n".join(lines))]
-        if run_id:
-            cells.append(_code(
-                f"# Load the trained model for run {run_id}\n"
-                f"# (Edit the path below if you moved the project store.)\n"
-                f"# model = joblib.load(r'PATH_TO_PROJECT/runs/{run_id}/model.joblib')\n"
-            ))
-        return cells
+        data = _safe_data(step)
+        summary = data.get("summary") or data or {}
+        lines = [f"{prefix} — training: {step.title}", "", step.detail or ""]
+        best = summary.get("best_metrics") if isinstance(summary, dict) else None
+        if best:
+            lines.append("")
+            lines.append("**Best metrics:**")
+            for k, v in best.items():
+                lines.append(f"- {k}: {v}")
+        return [_md("\n".join(lines))]
 
     if step.kind == "review":
-        data = step.data or {}
-        lines = [f"### Step {step.index} — Review: {step.title}", "", step.detail or ""]
+        data = _safe_data(step)
+        lines = [f"{prefix} — review: {step.title}", "", step.detail or ""]
         if data.get("issues"):
             lines.append("\n**Issues:**")
             lines += [f"- {x}" for x in data["issues"]]
@@ -173,47 +665,21 @@ def _step_to_cells(step: AutopilotStep) -> list[nbformat.NotebookNode]:
         return [_md("\n".join(lines))]
 
     if step.kind == "observation":
-        return [_md(f"**Step {step.index} — {agent_label} note:** {step.detail}")]
+        return [_md(f"{prefix} — note: {step.detail}")]
 
     if step.kind in ("agent_start", "agent_end"):
         bullet = "▶" if step.kind == "agent_start" else "■"
-        return [_md(f"## {bullet} Step {step.index} — {step.title}")]
+        return [_md(f"{prefix} — {bullet} {step.title}")]
 
     if step.kind == "summary":
-        return [_md(f"## Step {step.index} — Final Strategy Report\n\n{step.detail}")]
+        return [_md(f"{prefix} — final strategy\n\n{step.detail}")]
 
-    return [_md(f"### Step {step.index} — {step.title}\n\n{step.detail}")]
-
-
-def _datasets_cell(
-    session: LoadedSession, store: ProjectStore
-) -> nbformat.NotebookNode | None:
-    if not session.new_datasets:
-        return None
-    lines = ["# Datasets created during this session — load with pandas", ""]
-    for ds in session.new_datasets:
-        var = ds.name.replace(" ", "_").replace("-", "_") or "df"
-        lines.append(f"# {ds.name}: {ds.row_count} rows × {ds.column_count} cols")
-        lines.append(f"df_{var} = pd.read_csv(r'{ds.file_path}')")
-        lines.append(f"df_{var}.head()")
-        lines.append("")
-    return _code("\n".join(lines))
+    return [_md(f"{prefix} — {step.title}\n\n{step.detail}")]
 
 
-def _training_summary_cell(session: LoadedSession) -> nbformat.NotebookNode | None:
-    if not session.training_runs:
-        return None
-    lines = ["## Training runs summary", ""]
-    for run in session.training_runs:
-        metrics = ", ".join(
-            f"{k}={v}" for k, v in (run.get("best_metrics") or {}).items()
-        )
-        lines.append(
-            f"- **{run.get('run_id', '?')}** — dataset `{run.get('dataset')}`,"
-            f" target `{run.get('target')}`, task `{run.get('task_type')}`,"
-            f" best model `{run.get('best_model')}` ({metrics})"
-        )
-    return _md("\n".join(lines))
+# ──────────────────────────────────────────────────────────────────────────────
+# Public entry point
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 def build_notebook(
@@ -222,31 +688,44 @@ def build_notebook(
     store: ProjectStore,
 ) -> nbformat.NotebookNode:
     nb = new_notebook()
+
     cells: list[nbformat.NotebookNode] = [
         _header_cell(project, session),
+        _lifecycle_overview_cell(),
         _setup_cell(),
     ]
 
-    datasets_cell = _datasets_cell(session, store)
-    if datasets_cell is not None:
-        cells.append(_md("## Generated datasets"))
-        cells.append(datasets_cell)
-
-    training_cell = _training_summary_cell(session)
-    if training_cell is not None:
-        cells.append(training_cell)
-
-    if session.notebook:
-        notes = "\n".join(f"- {entry}" for entry in session.notebook)
-        cells.append(_md(f"## Shared notebook (agent observations)\n\n{notes}"))
-
-    cells.append(_md("## Step-by-step replay"))
+    # Bucket every step by phase. Anything with an unknown phase falls into
+    # the first phase so it still shows up somewhere.
+    by_phase: dict[str, list[AutopilotStep]] = {pid: [] for pid in PHASE_IDS}
     for step in session.steps:
-        cells.extend(_step_to_cells(step))
+        bucket = step.phase if step.phase in by_phase else PHASE_IDS[0]
+        by_phase[bucket].append(step)
+
+    # Emit one section per phase, in lifecycle order. Skip phases that have
+    # zero activity AND no reproducible artefacts.
+    for phase in PHASES:
+        pid = phase["id"]
+        steps = by_phase.get(pid, [])
+        # Skip empty narrative phases unless artefacts exist for them.
+        if not steps and pid not in {"data_understanding", "evaluation"}:
+            continue
+        cells.extend(_phase_section(phase, steps, session, store, project))
 
     if session.strategy_summary:
-        cells.append(_md("## Final Strategy Report"))
-        cells.append(_md(session.strategy_summary))
+        cells.append(_md("---"))
+        cells.append(_md(f"## Final Strategy Report\n\n{session.strategy_summary}"))
+
+    # Appendix — full chronological transcript.
+    cells.append(_md("---"))
+    cells.append(_md(
+        "## Appendix — Full agent transcript\n\n"
+        "Chronological replay of every agent step in this session. Useful for "
+        "auditing the run or debugging unexpected behaviour. Each entry is "
+        "tagged with the lifecycle phase it belonged to."
+    ))
+    for step in session.steps:
+        cells.extend(_transcript_cells_for_step(step))
 
     nb["cells"] = cells
     nb["metadata"] = {
@@ -255,6 +734,7 @@ def build_notebook(
             "project_name": project.name,
             "session_id": session.session_id,
             "status": session.status,
+            "lifecycle": PHASE_IDS,
         },
         "kernelspec": {
             "name": "python3",

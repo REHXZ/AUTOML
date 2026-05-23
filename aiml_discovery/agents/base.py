@@ -28,6 +28,71 @@ log = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# AIML lifecycle (modified CRISP-DM, no deployment, with iteration loop).
+# Soft guidance only — phases are tracked as metadata on every step so the
+# exported notebook can group activity into lifecycle sections, but the
+# Scientist is not gated on phase transitions.
+# ──────────────────────────────────────────────────────────────────────────────
+
+PHASES: list[dict[str, str]] = [
+    {
+        "id": "business_understanding",
+        "title": "Business Understanding",
+        "description": (
+            "Frame the problem with the user: clarify the target, the unit of "
+            "prediction, the success metric, and any business constraints."
+        ),
+    },
+    {
+        "id": "data_understanding",
+        "title": "Data Understanding",
+        "description": (
+            "Profile every available dataset. Inspect distributions, missingness, "
+            "cardinality, and target behaviour. Output: a clear picture of what "
+            "the data contains and which signals look promising."
+        ),
+    },
+    {
+        "id": "data_preparation",
+        "title": "Data Preparation",
+        "description": (
+            "Build modelling-ready datasets: clean, transform, aggregate, and "
+            "engineer features. For forecasting, this is where lead targets and "
+            "lag/rolling features get materialised."
+        ),
+    },
+    {
+        "id": "modeling",
+        "title": "Modeling",
+        "description": (
+            "Train baseline models and run fine-tuning rounds. Each fine-tuning "
+            "pass tries the improvements the Review Agent recommended."
+        ),
+    },
+    {
+        "id": "evaluation",
+        "title": "Evaluation",
+        "description": (
+            "Compare runs against each other and against the success metric. "
+            "Critique each run for leakage, drift, and over-fitting."
+        ),
+    },
+    {
+        "id": "iteration",
+        "title": "Iteration & User Feedback",
+        "description": (
+            "Decide what to do next: loop back to modeling (more tuning), back "
+            "to data preparation (new features), or finalise. Capture user "
+            "feedback on the chosen direction."
+        ),
+    },
+]
+
+PHASE_IDS: list[str] = [p["id"] for p in PHASES]
+PHASE_BY_ID: dict[str, dict[str, str]] = {p["id"]: p for p in PHASES}
+
+
 @dataclass
 class AutopilotStep:
     """A unit of activity yielded from any agent to the UI."""
@@ -35,12 +100,15 @@ class AutopilotStep:
     index: int
     # "thought" | "tool_call" | "tool_result" | "chart" | "ask" |
     # "new_dataset" | "training" | "summary" | "observation" |
-    # "agent_start" | "agent_end" | "review"
+    # "agent_start" | "agent_end" | "review" | "phase_transition"
     kind: str
     title: str
     detail: str = ""
     data: dict[str, Any] | None = None
     agent: str = "scientist"
+    # Which lifecycle phase this step belongs to. Auto-populated from
+    # AgentContext.current_phase by BaseAgent._step().
+    phase: str = "business_understanding"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -64,11 +132,23 @@ class AgentContext:
     # Optional persistence handle. When set, agents stream their LLM messages
     # to disk so the run can be resumed after a refresh.
     session: "SessionWriter | None" = None
+    # Current AIML lifecycle phase. Soft guidance — the Scientist updates this
+    # via set_phase() but agents can still operate freely. Every step yielded
+    # via BaseAgent._step() is tagged with this value so the exported notebook
+    # can group activity into lifecycle sections.
+    current_phase: str = "business_understanding"
     _step_counter: int = 0
 
     def next_step_index(self) -> int:
         self._step_counter += 1
         return self._step_counter
+
+    def set_phase(self, phase: str) -> str:
+        """Update current_phase if valid; return the resulting phase id."""
+        from .base import PHASE_IDS  # local import keeps module bootstrap clean
+        if phase in PHASE_IDS:
+            self.current_phase = phase
+        return self.current_phase
 
     def list_datasets(self) -> list[DatasetInfo]:
         return self.store.list_datasets(self.project_id)
@@ -162,6 +242,7 @@ class BaseAgent:
             detail=detail,
             data=data,
             agent=self.name,
+            phase=self._ctx.current_phase,
         )
 
     def _persist_message(self, message: dict) -> None:

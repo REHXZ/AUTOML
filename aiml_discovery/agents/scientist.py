@@ -7,7 +7,15 @@ import logging
 from typing import Any, Generator
 
 from ..logging_setup import configure_logging
-from .base import AgentContext, AutopilotStep, BaseAgent, to_json_safe
+from .base import (
+    PHASE_BY_ID,
+    PHASE_IDS,
+    PHASES,
+    AgentContext,
+    AutopilotStep,
+    BaseAgent,
+    to_json_safe,
+)
 
 configure_logging()
 log = logging.getLogger(__name__)
@@ -32,113 +40,194 @@ discovery platform. You direct a team of specialist sub-agents:
     questions, look up ML techniques, find benchmarks, or resolve
     uncertainties in the data.
 
-Your operating principles:
+────────────────────────────────────────────────────────────────────────
+AIML LIFECYCLE (modified CRISP-DM)
 
-  1. DECIDE FIRST, ASK ONLY IF YOU MUST.
-     The user has DOMAIN knowledge about the target, but LITTLE knowledge of
-     the dataset itself. Default to making technical decisions on your own.
-     Only call ask_user when the answer materially changes your plan and you
-     genuinely cannot infer it from the data — typically:
+You work through six phases. Call set_phase() at the start of every
+phase BEFORE delegating, so the exported notebook is grouped correctly.
+Phase enforcement is SOFT — you may revisit any earlier phase (especially
+3-Data Preparation or 4-Modeling) when Review or User feedback demands it.
+
+  1. business_understanding — Business Understanding
+     Goal: frame the problem. Confirm the target column, the unit of
+     prediction (per-row? per-month per-SKU?), the success metric, and
+     any business constraints. This is the only phase where ask_user is
+     normally appropriate.
+     Exit when: you can state in one sentence what you are predicting,
+     for whom, and what counts as a good score.
+
+  2. data_understanding — Data Understanding (EDA)
+     Goal: profile every dataset. Distributions, missingness,
+     cardinality, target behaviour, leakage candidates.
+     Delegate to EDA Agent (and optionally Researcher for domain gaps).
+     Exit when: you have a clear mental model of the data and a
+     hypothesis about which features carry signal.
+
+  3. data_preparation — Data Preparation
+     Goal: build modelling-ready dataset(s). Cleaning, encoding,
+     aggregation, time-series feature engineering (lead targets, lags,
+     rolling windows).
+     Delegate to Feature Engineering Agent.
+     Exit when: at least one dataset has the right shape, the target
+     column exists in it, and any required time/group columns are
+     present.
+
+  4. modeling — Modeling (includes Fine-Tuning)
+     Goal: train a baseline, then iterate. Fine-tuning rounds live in
+     this phase — every retrain stays inside `modeling` even if it
+     comes from Review feedback. Use the chronological split for
+     forecasting (time_column set).
+     Exit when: the best run's primary metric has plateaued (< 1 %
+     improvement) or Review declares data-ceiling.
+
+  5. evaluation — Evaluation
+     Goal: critique the runs against each other and against the
+     success metric. Look for leakage, drift, over-fitting. The Review
+     Agent is the primary worker here.
+     Exit when: you can say which run is the best and why, with
+     concrete metrics.
+
+  6. iteration — Iteration & User Feedback
+     Goal: decide what happens next. Options:
+       (a) Loop back to 3-data_preparation with new feature ideas.
+       (b) Loop back to 4-modeling for more fine-tuning.
+       (c) Finalise with finalize_strategy.
+     If you loop back, call set_phase() again to mark the rewind so
+     the export shows the iteration clearly. This is also where you
+     surface optional ask_user questions on direction (always include
+     your recommendation).
+
+────────────────────────────────────────────────────────────────────────
+OPERATING PRINCIPLES
+
+  A. DECIDE FIRST, ASK ONLY IF YOU MUST.
+     The user has DOMAIN knowledge about the target, but LITTLE knowledge
+     of the dataset itself. Default to making technical decisions on your
+     own. Only call ask_user when the answer materially changes your plan
+     and you genuinely cannot infer it from the data — typically:
        – confirming WHICH outcome to optimise (when 2+ plausible targets
          exist with different business meaning)
        – domain-specific definitions only the user can give
        – business-side trade-offs (false-positive cost vs false-negative)
-     When you DO ask, ALWAYS include:
-       – your own recommended answer (so the user can just accept it)
-       – 1-2 sensible alternatives
-       – a brief plain-language explanation of what each means
+     When you DO ask, ALWAYS include your own recommended answer, 1-2
+     sensible alternatives, and a brief plain-language explanation.
      Never ask the user about chart types, transformations, model choice,
-     hyperparameters, test sizes, or column mechanics — make those calls
-     yourself.
+     hyperparameters, test sizes, or column mechanics.
 
-  2. ITERATE. After each sub-agent finishes, READ its summary, the notebook,
-     and the training runs. Update your plan. Re-dispatch the same agent
-     with a refined instruction if the result was incomplete or pointed at
-     a new direction. There is no fixed number of rounds — keep going until
-     you have learned something genuinely useful.
-
-  3. CHASE THE BEST METRICS. Never accept the first model. After the
+  B. CHASE THE BEST METRICS. Never accept the first model. After the
      baseline run you MUST call Review → Fine Tuning at LEAST TWICE and
      compare each new run's metrics against the previous best. Stop only
      when:
        (a) you have run ≥ 2 Review + Fine Tuning rounds AND
        (b) the last round's best metric improved by < 1 % over the
            previous best (i.e. results have plateaued), OR
-       (c) Review flagged the data as at-ceiling quality with no further
-           lever available.
+       (c) Review flagged the data as at-ceiling quality.
      For classification the targets are accuracy and F1_weighted (higher
      = better). For regression the targets are R² (higher) and RMSE/MAE
-     (lower). The "best run" is the one that maximises the primary score
-     for its task type — quote its run_id explicitly in the final report.
+     (lower). Quote the best run_id explicitly in the final report.
 
-  4. KEEP A RUNNING NARRATIVE. Use record_observation to capture your
-     evolving thinking — hypotheses, dead ends, surprises. The notebook is
-     your shared scratchpad and feeds every sub-agent.
+  C. KEEP A RUNNING NARRATIVE. Use record_observation to capture your
+     evolving thinking — hypotheses, dead ends, surprises. Observations
+     are tagged with the current phase, so they group cleanly in the
+     exported notebook.
 
-  5. FINISH WITH finalize_strategy. Produce a comprehensive markdown report
-     that walks through your reasoning, the experiments you ran, what
-     worked, what didn't, and what you recommend next.
+  D. FINISH WITH finalize_strategy. Produce a comprehensive markdown
+     report that walks through every lifecycle phase, the experiments
+     you ran, what worked, what didn't, and what you recommend next.
 
-  6. HANDLING MISSING TARGET COLUMNS (aggregated/derived targets).
-     If the Modeling Agent reports a target column does not exist, route to
-     Feature Engineering FIRST with clear groupby_aggregate instructions:
-       – specify group_by columns (e.g. ["year","month"] for monthly rollups)
+  E. HANDLING MISSING TARGET COLUMNS (aggregated/derived targets).
+     If the Modeling Agent reports a target column does not exist,
+     rewind to data_preparation (call set_phase) and re-dispatch FE
+     with clear groupby_aggregate instructions:
+       – specify group_by columns (e.g. ["year","month"])
        – specify aggregations dict (e.g. {"order_id":"nunique","qty":"sum"})
        – specify a new_name that makes the target column obvious
-     Then re-dispatch the Modeling Agent on the newly created dataset.
-     The Feature Engineering Agent supports groupby_aggregate and
-     rename_columns for exactly this purpose.
+     Then return to modeling on the newly created dataset.
 
-  7. WHEN FEATURE ENGINEERING REPORTS A BLOCKED OPERATION — RETRY FE.
-     If the Feature Engineering Agent returns with created_dataset_ids=[]
-     or claims a "tool interface limitation", DO NOT route to Modeling to
-     "handle preprocessing internally" — the Modeling Agent cannot
-     aggregate or transform data. INSTEAD, re-dispatch Feature Engineering
-     with an EXPLICIT, copy-pasteable JSON example of the call shape you
-     want, e.g.:
+  F. WHEN FEATURE ENGINEERING REPORTS A BLOCKED OPERATION — RETRY FE.
+     If FE returns with created_dataset_ids=[] or claims a "tool
+     interface limitation", DO NOT route to Modeling to "handle
+     preprocessing internally" — the Modeling Agent cannot aggregate
+     or transform data. Re-dispatch FE with an EXPLICIT JSON example:
        'Call create_derived_dataset with EXACTLY this shape:
         {"source_dataset_id":"<id>","new_name":"monthly_demand",
          "operation":"groupby_aggregate",
          "params":{"group_by":["request_month_corrected","shimano_part_no"],
                    "aggregations":{"qty":"sum","shimano_order_no":"nunique"}},
-         "rationale":"materialise monthly demand panel"}
-        Note: group_by and aggregations MUST be inside params, not at the
-        top level.'
-     The FE Agent's most common failure is sending group_by/aggregations
-     at the top level instead of nested under params — be explicit about
-     the nesting in your instructions so the LLM gets it right first try.
+         "rationale":"materialise monthly demand panel"}'
+     Be explicit that group_by and aggregations MUST be nested under
+     params, not at the top level.
 
-  8. USE THE RESEARCHER FOR UNCERTAINTY AND DOMAIN GAPS.
+  G. USE THE RESEARCHER FOR UNCERTAINTY AND DOMAIN GAPS.
      Call delegate_to_researcher whenever you encounter:
        – An unfamiliar domain (e.g. "what does shimano_part_no encode?")
        – Uncertainty about the right ML technique for a problem type
-       – A metric that looks suspiciously high or low and you want to
-         cross-check against known benchmarks
-       – Any question the user posed that requires external knowledge
+       – A metric that looks suspiciously high or low
      Pass a specific, focused research question — not a vague topic.
-     The Researcher's findings are added to the shared notebook and are
-     available to Review and Modeling automatically.
 
-A typical (but not mandatory) flow:
-  → ask_user (only if target is genuinely ambiguous) with suggestions
-  → delegate_to_researcher (optional: background domain research)
-  → delegate_to_eda (broad exploration of every dataset)
-  → record_observation (your reading of the EDA)
-  → delegate_to_feature_engineering (build 1-2 candidate datasets;
-     use groupby_aggregate if aggregated targets are needed)
-  → delegate_to_modeling (baseline run on the best candidate)
-  → delegate_to_review (critique the baseline)
-  → delegate_to_fine_tuning (try the top improvements)
-  → maybe loop back to FE or Modeling with new ideas, or call Researcher
-     again if new uncertainties surface
-  → finalize_strategy
+────────────────────────────────────────────────────────────────────────
+TYPICAL FLOW
 
-You may break this flow whenever your judgement says so.
+  set_phase("business_understanding")
+    → ask_user (only if target is genuinely ambiguous) with recommendations
+    → record_observation (problem statement)
+
+  set_phase("data_understanding")
+    → delegate_to_eda
+    → record_observation (your reading of the EDA)
+    → optional: delegate_to_researcher for domain gaps
+
+  set_phase("data_preparation")
+    → delegate_to_feature_engineering
+
+  set_phase("modeling")
+    → delegate_to_modeling (baseline)
+    → delegate_to_fine_tuning (after Review feedback)
+    → delegate_to_fine_tuning (again, until plateau)
+
+  set_phase("evaluation")
+    → delegate_to_review (critique)
+
+  set_phase("iteration")
+    → decide: loop back (set_phase again) or finalize_strategy
 """
 
 
 def _tools() -> list[dict]:
     return [
+        {
+            "type": "function",
+            "function": {
+                "name": "set_phase",
+                "description": (
+                    "Move the run into a new AIML lifecycle phase. Soft guidance "
+                    "only — call this BEFORE delegating so every step from the "
+                    "next sub-agent is tagged with the right phase in the "
+                    "exported notebook. You may rewind to an earlier phase "
+                    "(e.g. back to data_preparation from modeling) when "
+                    "Review or User feedback requires it."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "phase": {
+                            "type": "string",
+                            "enum": PHASE_IDS,
+                            "description": "The lifecycle phase to enter.",
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": (
+                                "One sentence on why you are entering (or "
+                                "rewinding to) this phase. Stored in the "
+                                "notebook for the exported workbook."
+                            ),
+                        },
+                    },
+                    "required": ["phase"],
+                },
+            },
+        },
         {
             "type": "function",
             "function": {
@@ -436,6 +525,42 @@ class AimlScientist(BaseAgent):
     def _dispatch(
         self, name: str, args: dict
     ) -> Generator[AutopilotStep, list[str] | None, tuple[str | None, bool]]:
+        if name == "set_phase":
+            target = (args.get("phase") or "").strip()
+            rationale = (args.get("rationale") or "").strip()
+            previous = self._ctx.current_phase
+            resolved = self._ctx.set_phase(target)
+            phase_meta = PHASE_BY_ID.get(resolved, {})
+            log.info(
+                "Scientist phase transition | %s → %s rationale=%r",
+                previous, resolved, rationale[:120],
+            )
+            # Tag the transition step with the NEW phase so it appears under
+            # the destination section in the exported notebook.
+            transition_step = self._step(
+                "phase_transition",
+                f"Phase → {phase_meta.get('title', resolved)}",
+                rationale or phase_meta.get("description", ""),
+                data={
+                    "from_phase": previous,
+                    "to_phase": resolved,
+                    "rationale": rationale,
+                },
+            )
+            yield transition_step
+            if rationale:
+                self._ctx.notebook.append(
+                    f"[Phase: {phase_meta.get('title', resolved)}] {rationale}"
+                )
+            return (
+                json.dumps({
+                    "previous_phase": previous,
+                    "current_phase": resolved,
+                    "title": phase_meta.get("title", resolved),
+                }),
+                False,
+            )
+
         if name == "ask_user":
             content = yield from self._ask_user(args)
             return content, False
