@@ -303,7 +303,13 @@ class EdaAgent(BaseAgent):
             "chart",
             title,
             description,
-            data={"figure": fig, "dataset_name": ds.name},
+            data={
+                "figure": fig,
+                "dataset_name": ds.name,
+                "dataset_id": ds.id,
+                "chart_type": chart_type,
+                "chart_params": dict(params),
+            },
         )
         result_text = json.dumps(
             {"chart": title, "description": description, "dataset": ds.name}
