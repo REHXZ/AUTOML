@@ -1,11 +1,12 @@
 import {
-  BarChart3,
+  Binary,
   Brain,
-  Search,
-  ShieldCheck,
-  SlidersHorizontal,
-  Target,
-  Wrench
+  Compass,
+  Globe,
+  ScanEye,
+  ScatterChart,
+  SlidersVertical,
+  WandSparkles
 } from "lucide-react";
 
 export const PHASES = [
@@ -18,19 +19,79 @@ export const PHASES = [
 ];
 
 export const AGENTS = [
-  { id: "scientist", title: "Scientist", icon: Brain, tone: "agent-scientist" },
-  { id: "researcher", title: "Researcher", icon: Search, tone: "agent-researcher" },
-  { id: "eda", title: "EDA", icon: BarChart3, tone: "agent-eda" },
+  {
+    id: "scientist",
+    title: "Scientist",
+    short: "sci",
+    role: "Orchestrator",
+    color: "#818CF8",
+    icon: Compass
+  },
+  {
+    id: "researcher",
+    title: "Researcher",
+    short: "res",
+    role: "Web research",
+    color: "#00A9BD",
+    icon: Globe
+  },
+  {
+    id: "eda",
+    title: "EDA",
+    short: "eda",
+    role: "Profile & visualise",
+    color: "#06D7E8",
+    icon: ScatterChart
+  },
   {
     id: "feature_engineering",
-    title: "Feature Engineering",
-    icon: Wrench,
-    tone: "agent-feature"
+    title: "Feature engineering",
+    short: "fe",
+    role: "Transform datasets",
+    color: "#F59E0B",
+    icon: SlidersVertical
   },
-  { id: "modeling", title: "Modeling", icon: Target, tone: "agent-modeling" },
-  { id: "review", title: "Review", icon: ShieldCheck, tone: "agent-review" },
-  { id: "fine_tuning", title: "Fine Tuning", icon: SlidersHorizontal, tone: "agent-tuning" }
+  {
+    id: "modeling",
+    title: "Modeling",
+    short: "mod",
+    role: "AutoML training",
+    color: "#10B981",
+    icon: Binary
+  },
+  {
+    id: "review",
+    title: "Review",
+    short: "rev",
+    role: "Critique results",
+    color: "#E91E63",
+    icon: ScanEye
+  },
+  {
+    id: "fine_tuning",
+    title: "Fine tuning",
+    short: "ft",
+    role: "Iterate on review",
+    color: "#A5B0FB",
+    icon: WandSparkles
+  }
 ];
+
+export const AGENT_BY_ID = AGENTS.reduce((map, agent) => {
+  map[agent.id] = agent;
+  return map;
+}, {});
+
+export const AGENT_ORDER = AGENTS.map((agent) => agent.id);
+
+export const FALLBACK_AGENT = {
+  id: "scientist",
+  title: "Scientist",
+  short: "sci",
+  role: "Orchestrator",
+  color: "#818CF8",
+  icon: Brain
+};
 
 export const STEP_LABELS = {
   thought: "Reasoning",
@@ -47,4 +108,3 @@ export const STEP_LABELS = {
   review: "Review",
   phase_transition: "Phase"
 };
-

@@ -1,36 +1,34 @@
 import {
-  Activity,
   AlertTriangle,
-  CheckCircle2,
-  Circle,
-  ClipboardList,
-  Database,
+  ChevronRight,
   Download,
-  FileText,
   FolderPlus,
+  ListOrdered,
   Loader2,
-  MessageSquare,
-  Moon,
+  Pause,
   Play,
-  Radio,
   RefreshCw,
+  Search,
   Send,
-  Sun,
+  Settings2,
+  SkipBack,
+  SkipForward,
   Trash2,
   Upload,
+  Workflow,
   X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Plot from "react-plotly.js";
-import ReactMarkdown from "react-markdown";
 
+import DetailDrawer from "./DetailDrawer";
+import LinearTimeline from "./LinearTimeline";
+import SwimlaneGraph from "./SwimlaneGraph";
 import {
   connectSessionEvents,
   createProject,
   deleteSession,
   getHealth,
   getSession,
-  isTerminalStatus,
   listDatasets,
   listProjects,
   listSessions,
@@ -41,32 +39,38 @@ import {
   uploadDataset
 } from "./api";
 import { AGENTS } from "./constants";
+import { Btn, IconBtn, Pill } from "./primitives";
 import {
+  agentFor,
   formatDate,
-  getAgentState,
-  getPhaseState,
+  getSessionStats,
+  isTerminalStatus,
   maxStepIndex,
   mergeStep,
   normalizeQuestions,
-  parseFigure,
-  shortDetail,
   statusText,
-  stepKindLabel,
   visibleActivitySteps
 } from "./utils";
 
-const THEME_STORAGE_KEY = "aiml-dashboard-theme";
+const TWEAK_KEY = "aiml-autopilot-tweaks";
+const DEFAULT_TWEAKS = {
+  view: "graph",
+  density: "comfortable",
+  showLegend: true,
+  showStream: true,
+  showWorkspace: true,
+  replaySpeed: "live"
+};
 
-function getInitialTheme() {
-  if (typeof window === "undefined") return "light";
-  let stored = null;
+function loadTweaks() {
+  if (typeof window === "undefined") return DEFAULT_TWEAKS;
   try {
-    stored = window.localStorage?.getItem(THEME_STORAGE_KEY) ?? null;
+    const raw = window.localStorage?.getItem(TWEAK_KEY);
+    if (!raw) return DEFAULT_TWEAKS;
+    return { ...DEFAULT_TWEAKS, ...JSON.parse(raw) };
   } catch {
-    stored = null;
+    return DEFAULT_TWEAKS;
   }
-  if (stored === "light" || stored === "dark") return stored;
-  return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
 }
 
 export default function App() {
@@ -90,8 +94,11 @@ export default function App() {
   const [uploadingDataset, setUploadingDataset] = useState(false);
   const [error, setError] = useState(null);
   const [streaming, setStreaming] = useState(false);
-  const [selectedAgentIds, setSelectedAgentIds] = useState([]);
-  const [theme, setTheme] = useState(getInitialTheme);
+  const [tweaks, setTweaks] = useState(loadTweaks);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [hoverIndex, setHoverIndex] = useState(null);
+  const [playing, setPlaying] = useState(true);
   const closeStreamRef = useRef(null);
 
   const selectedProject = projects.find((project) => project.id === projectId) ?? null;
@@ -100,6 +107,31 @@ export default function App() {
     [activeSession?.pending_step]
   );
   const [answers, setAnswers] = useState([]);
+
+  const visibleSteps = useMemo(
+    () => visibleActivitySteps(activeSession?.steps ?? []),
+    [activeSession?.steps]
+  );
+
+  const selectedStep = useMemo(
+    () =>
+      selectedIndex == null
+        ? null
+        : visibleSteps.find((step) => step.index === selectedIndex) ?? null,
+    [selectedIndex, visibleSteps]
+  );
+
+  const setTweak = useCallback((key, value) => {
+    setTweaks((prev) => {
+      const next = { ...prev, [key]: value };
+      try {
+        window.localStorage?.setItem(TWEAK_KEY, JSON.stringify(next));
+      } catch {
+        // storage optional
+      }
+      return next;
+    });
+  }, []);
 
   const refreshSessions = useCallback(async (id) => {
     const records = await listSessions(id);
@@ -171,6 +203,7 @@ export default function App() {
       setDatasets(projectDatasets);
       setSessions(projectSessions);
       setActiveSession(null);
+      setSelectedIndex(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -200,25 +233,37 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
     return () => closeStream();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-    try {
-      window.localStorage?.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Theme still works when browser storage is unavailable.
-    }
-  }, [theme]);
 
   useEffect(() => {
     setAnswers(questions.map((question) => question.recommendation ?? ""));
   }, [questions]);
 
+  // Keyboard: G / T to switch view, Esc handled in drawer.
   useEffect(() => {
-    setSelectedAgentIds([]);
-  }, [projectId, activeSession?.session_id]);
+    const onKey = (event) => {
+      const tag = event.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (event.key === "g" || event.key === "G") setTweak("view", "graph");
+      if (event.key === "t" || event.key === "T") setTweak("view", "timeline");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setTweak]);
+
+  // When a new session loads, select the running step if any.
+  useEffect(() => {
+    if (!activeSession) {
+      setSelectedIndex(null);
+      return;
+    }
+    const visible = visibleActivitySteps(activeSession.steps ?? []);
+    if (activeSession.status === "running") {
+      const last = visible.at(-1);
+      if (last) setSelectedIndex(last.index);
+    }
+  }, [activeSession?.session_id, activeSession?.status]);
 
   const handleProjectChange = async (id) => {
     closeStream();
@@ -326,7 +371,7 @@ export default function App() {
     }
   };
 
-  const handleDelete = async (record) => {
+  const handleDeleteSession = async (record) => {
     if (!projectId) return;
     setLoading(true);
     setError(null);
@@ -351,7 +396,11 @@ export default function App() {
     setError(null);
     setNotice(null);
     try {
-      await submitAnswers(projectId, activeSession.session_id, answers.map((answer) => answer.trim()));
+      await submitAnswers(
+        projectId,
+        activeSession.session_id,
+        answers.map((answer) => answer.trim())
+      );
       const loaded = await refreshSession(projectId, activeSession.session_id);
       openEventStream(projectId, activeSession.session_id, maxStepIndex(loaded.steps));
     } catch (err) {
@@ -378,47 +427,295 @@ export default function App() {
     }
   };
 
-  const stats = getStats(activeSession);
-  const agentStates = useMemo(() => getAgentState(activeSession), [activeSession]);
-  const visibleTimelineSteps = useMemo(() => {
-    const steps = visibleActivitySteps(activeSession?.steps ?? []);
-    if (selectedAgentIds.length === 0) return steps;
-    return steps.filter((step) => selectedAgentIds.includes(step.agent));
-  }, [activeSession?.steps, selectedAgentIds]);
-  const selectedAgents = useMemo(
-    () => agentStates.filter((agent) => selectedAgentIds.includes(agent.id)),
-    [agentStates, selectedAgentIds]
-  );
+  const stats = useMemo(() => getSessionStats(activeSession), [activeSession]);
+  const datasetSummary = useMemo(() => {
+    if (!datasets.length) return "no dataset";
+    const first = datasets[0];
+    const rows = first.row_count?.toLocaleString?.() ?? first.row_count ?? "";
+    return `${first.name} · ${rows} × ${first.column_count ?? "?"}`;
+  }, [datasets]);
+
   const disabledLaunch = loading || !projectId || datasets.length === 0;
 
-  const toggleAgentFilter = (agentId) => {
-    setSelectedAgentIds((current) =>
-      current.includes(agentId)
-        ? current.filter((id) => id !== agentId)
-        : [...current, agentId]
-    );
-  };
-
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-block">
-          <div className="brand-mark">
-            <Activity size={20} />
-          </div>
-          <div>
-            <h1>AIML Autopilot</h1>
-            <p>Agent operations</p>
-          </div>
-        </div>
+    <div className="app-root">
+      <AppHeader
+        project={selectedProject}
+        session={activeSession}
+        streaming={streaming}
+        loading={loading}
+        onRefresh={() => void bootstrap()}
+        onTweaks={() => setTweaksOpen((open) => !open)}
+        notebookHref={
+          activeSession ? notebookUrl(projectId, activeSession.session_id) : null
+        }
+      />
 
-        <label className="field-label" htmlFor="project-select">
-          Project
-        </label>
+      {error ? (
+        <div className="alert-bar alert-bar--error">
+          <AlertTriangle size={15} strokeWidth={1.75} />
+          <span>{error}</span>
+          <button type="button" className="alert-bar__close" onClick={() => setError(null)}>
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+      {notice ? (
+        <div className="alert-bar alert-bar--notice">
+          <span>{notice}</span>
+          <button type="button" className="alert-bar__close" onClick={() => setNotice(null)}>
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+
+      <div className="app-body">
+        {tweaks.showWorkspace ? (
+          <Workspace
+            projects={projects}
+            projectId={projectId}
+            onProjectChange={(id) => void handleProjectChange(id)}
+            loading={loading}
+            sessions={sessions}
+            activeSession={activeSession}
+            onOpenSession={(record) => void handleOpenSession(record)}
+            onDeleteSession={(record) => void handleDeleteSession(record)}
+            onRefreshSessions={() => projectId && void refreshSessions(projectId)}
+            datasets={datasets}
+            datasetFile={datasetFile}
+            datasetName={datasetName}
+            datasetTableName={datasetTableName}
+            fileInputKey={fileInputKey}
+            uploadingDataset={uploadingDataset}
+            onFile={setDatasetFile}
+            onDatasetName={setDatasetName}
+            onDatasetTableName={setDatasetTableName}
+            onUploadDataset={() => void handleUploadDataset()}
+            projectName={projectName}
+            projectDescription={projectDescription}
+            onProjectName={setProjectName}
+            onProjectDescription={setProjectDescription}
+            creatingProject={creatingProject}
+            onCreateProject={() => void handleCreateProject()}
+          />
+        ) : null}
+
+        <div className="main">
+          {activeSession ? (
+            <>
+              <RunHeader
+                project={selectedProject}
+                session={activeSession}
+                datasetSummary={datasetSummary}
+                stats={stats}
+                streaming={streaming}
+                tweaks={tweaks}
+                playing={playing}
+                onTogglePlay={() => setPlaying((p) => !p)}
+                onView={(view) => setTweak("view", view)}
+              />
+
+              <div className="canvas-row">
+                <div className="canvas">
+                  {tweaks.view === "graph" ? (
+                    <SwimlaneGraph
+                      session={activeSession}
+                      density={tweaks.density}
+                      selectedIndex={selectedIndex}
+                      hoverIndex={hoverIndex}
+                      onSelect={setSelectedIndex}
+                      onHover={setHoverIndex}
+                    />
+                  ) : (
+                    <LinearTimeline
+                      session={activeSession}
+                      density={tweaks.density}
+                      selectedIndex={selectedIndex}
+                      hoverIndex={hoverIndex}
+                      onSelect={setSelectedIndex}
+                      onHover={setHoverIndex}
+                    />
+                  )}
+                </div>
+
+                {selectedStep ? (
+                  <DetailDrawer
+                    session={activeSession}
+                    step={selectedStep}
+                    theme="dark"
+                    onClose={() => setSelectedIndex(null)}
+                  />
+                ) : null}
+              </div>
+
+              {activeSession.status === "waiting_for_input" && questions.length ? (
+                <QuestionPanel
+                  questions={questions}
+                  answers={answers}
+                  onAnswer={setAnswers}
+                  onSubmit={() => void handleSubmitAnswers()}
+                  loading={loading}
+                />
+              ) : null}
+
+              {activeSession.status !== "waiting_for_input" &&
+              activeSession.status !== "running" ? (
+                <FollowUpBar
+                  value={followUp}
+                  onChange={setFollowUp}
+                  onSend={() => void handleFollowUp()}
+                  loading={loading}
+                />
+              ) : null}
+            </>
+          ) : (
+            <EmptyCanvas
+              project={selectedProject}
+              datasets={datasets}
+              health={health}
+              goal={goal}
+              onGoal={setGoal}
+              onStart={() => void handleStart()}
+              loading={loading}
+              disabledLaunch={disabledLaunch}
+            />
+          )}
+
+          {tweaks.showStream ? <LiveStream session={activeSession} /> : null}
+        </div>
+      </div>
+
+      {tweaksOpen ? (
+        <TweaksPanel
+          tweaks={tweaks}
+          onChange={setTweak}
+          onClose={() => setTweaksOpen(false)}
+        />
+      ) : null}
+      <div className="tweaks-toggle">
+        <Btn
+          variant="secondary"
+          size="sm"
+          icon={Settings2}
+          onClick={() => setTweaksOpen((open) => !open)}
+        >
+          tweaks
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+function AppHeader({ project, session, streaming, loading, onRefresh, onTweaks, notebookHref }) {
+  return (
+    <div className="app-header">
+      <div className="app-header__logo">
+        <svg width="22" height="22" viewBox="0 0 56 56" fill="none">
+          <path d="M14 12 L4 12 L4 44 L14 44" stroke="currentColor" strokeWidth="2.5" fill="none" />
+          <path d="M42 12 L52 12 L52 44 L42 44" stroke="currentColor" strokeWidth="2.5" fill="none" />
+          <rect x="14" y="22" width="12" height="12" fill="#6366F1" />
+          <rect x="30" y="22" width="12" height="12" fill="#06D7E8" />
+        </svg>
+        <span className="app-header__brand">
+          aiml<span className="app-header__brand-sub">/autopilot</span>
+        </span>
+      </div>
+
+      <div className="app-header__crumb">
+        <span>{project?.name ?? "no project"}</span>
+        <ChevronRight size={12} strokeWidth={1.5} style={{ color: "var(--fg-4)" }} />
+        <span>sessions</span>
+        <ChevronRight size={12} strokeWidth={1.5} style={{ color: "var(--fg-4)" }} />
+        <span className="app-header__crumb-current">{session?.session_id ?? "—"}</span>
+      </div>
+
+      <div className="app-header__spacer" />
+
+      {session ? (
+        <Pill
+          tone={
+            session.status === "running"
+              ? "running"
+              : session.status === "complete"
+                ? "success"
+                : session.status === "waiting_for_input"
+                  ? "warn"
+                  : session.status === "error"
+                    ? "error"
+                    : "neutral"
+          }
+          dot={session.status === "running" ? "running" : undefined}
+          pulse={session.status === "running"}
+        >
+          {streaming ? "live · " : ""}
+          {statusText(session.status)}
+        </Pill>
+      ) : (
+        <Pill tone="neutral" dot="neutral">
+          idle
+        </Pill>
+      )}
+
+      <div className="app-header__divider" />
+
+      <Btn variant="ghost" size="sm" icon={Search} kbd="⌘K">
+        find
+      </Btn>
+      {notebookHref ? (
+        <a
+          className="btn btn--ghost btn--sm"
+          href={notebookHref}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Download size={12} strokeWidth={1.75} />
+          notebook.ipynb
+        </a>
+      ) : null}
+      <Btn variant="ghost" size="sm" icon={RefreshCw} onClick={onRefresh} disabled={loading}>
+        refresh
+      </Btn>
+      <IconBtn icon={Settings2} label="Tweaks" onClick={onTweaks} />
+      <div className="app-header__avatar">YH</div>
+    </div>
+  );
+}
+
+function Workspace({
+  projects,
+  projectId,
+  onProjectChange,
+  loading,
+  sessions,
+  activeSession,
+  onOpenSession,
+  onDeleteSession,
+  onRefreshSessions,
+  datasets,
+  datasetFile,
+  datasetName,
+  datasetTableName,
+  fileInputKey,
+  uploadingDataset,
+  onFile,
+  onDatasetName,
+  onDatasetTableName,
+  onUploadDataset,
+  projectName,
+  projectDescription,
+  onProjectName,
+  onProjectDescription,
+  creatingProject,
+  onCreateProject
+}) {
+  return (
+    <aside className="workspace">
+      <div className="workspace__section">
+        <span className="eyebrow">Project</span>
         <select
-          id="project-select"
+          className="field"
           value={projectId}
-          onChange={(event) => void handleProjectChange(event.target.value)}
+          onChange={(event) => onProjectChange(event.target.value)}
           disabled={loading || projects.length === 0}
         >
           {projects.length === 0 ? <option>No projects found</option> : null}
@@ -428,404 +725,287 @@ export default function App() {
             </option>
           ))}
         </select>
+      </div>
 
-        <form
-          className="project-create"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleCreateProject();
+      <div className="workspace__section">
+        <span className="eyebrow">New project</span>
+        <input
+          className="field"
+          value={projectName}
+          onChange={(event) => onProjectName(event.target.value)}
+          placeholder="Project name"
+          disabled={loading}
+        />
+        <textarea
+          className="field"
+          value={projectDescription}
+          onChange={(event) => onProjectDescription(event.target.value)}
+          placeholder="Description"
+          disabled={loading}
+        />
+        <Btn
+          variant="secondary"
+          size="sm"
+          icon={creatingProject ? Loader2 : FolderPlus}
+          onClick={onCreateProject}
+          disabled={loading || !projectName.trim()}
+        >
+          create
+        </Btn>
+      </div>
+
+      <div className="workspace__section">
+        <div className="workspace__title">
+          <span className="eyebrow">Dataset upload</span>
+          <span className="eyebrow" style={{ color: "var(--fg-3)" }}>
+            {datasets.length}
+          </span>
+        </div>
+        <label
+          className="field"
+          style={{
+            cursor: !projectId ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            color: "var(--fg-2)"
           }}
         >
-          <div className="side-header">
-            <span>New Project</span>
-          </div>
+          <Upload size={14} strokeWidth={1.75} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {datasetFile?.name ?? "Choose file"}
+          </span>
           <input
-            value={projectName}
-            onChange={(event) => setProjectName(event.target.value)}
-            placeholder="Project name"
-            disabled={loading}
+            key={fileInputKey}
+            type="file"
+            accept=".csv,.xlsx,.xls,.json,.db,.sqlite,.sqlite3"
+            disabled={!projectId}
+            onChange={(event) => onFile(event.target.files?.[0] ?? null)}
+            style={{ display: "none" }}
           />
-          <textarea
-            className="compact-textarea"
-            value={projectDescription}
-            onChange={(event) => setProjectDescription(event.target.value)}
-            placeholder="Description"
-            disabled={loading}
-          />
-          <button className="secondary-button sidebar-button" disabled={loading || !projectName.trim()}>
-            {creatingProject ? <Loader2 className="spin" size={16} /> : <FolderPlus size={16} />}
-            Create
-          </button>
-        </form>
+        </label>
+        <input
+          className="field"
+          value={datasetName}
+          onChange={(event) => onDatasetName(event.target.value)}
+          placeholder="Dataset name"
+          disabled={!projectId}
+        />
+        <input
+          className="field"
+          value={datasetTableName}
+          onChange={(event) => onDatasetTableName(event.target.value)}
+          placeholder="SQLite table"
+          disabled={!projectId}
+        />
+        <Btn
+          variant="secondary"
+          size="sm"
+          icon={uploadingDataset ? Loader2 : Upload}
+          onClick={onUploadDataset}
+          disabled={!projectId || !datasetFile || uploadingDataset}
+        >
+          upload
+        </Btn>
+      </div>
 
-        <div className="side-header">
-          <span>Sessions</span>
-          <button className="icon-button" onClick={() => projectId && void refreshSessions(projectId)}>
-            <RefreshCw size={16} />
-          </button>
+      <div className="workspace__section">
+        <div className="workspace__title">
+          <span className="eyebrow">Sessions</span>
+          <IconBtn icon={RefreshCw} label="Refresh sessions" size={24} onClick={onRefreshSessions} />
         </div>
         <div className="session-list">
           {sessions.map((record) => (
             <div
-              className={`session-row ${activeSession?.session_id === record.session_id ? "selected" : ""}`}
               key={record.session_id}
+              className={`session-row${activeSession?.session_id === record.session_id ? " is-selected" : ""}`}
             >
-              <button className="session-open" onClick={() => void handleOpenSession(record)}>
-                <span className={`status-dot ${record.status}`} />
-                <span>
+              <button className="session-row__open" onClick={() => onOpenSession(record)}>
+                <span className={`status-dot status-dot--${record.status}`} />
+                <span className="session-row__info">
                   <strong>{record.title || record.session_id}</strong>
                   <small>
-                    {record.step_count} steps - {formatDate(record.updated_at)}
+                    {record.step_count} steps · {formatDate(record.updated_at)}
                   </small>
                 </span>
               </button>
-              <button
-                className="icon-button danger"
-                onClick={() => void handleDelete(record)}
+              <IconBtn
+                icon={Trash2}
+                label="Delete session"
+                danger
+                size={26}
+                onClick={() => onDeleteSession(record)}
                 disabled={record.status === "running"}
-              >
-                <Trash2 size={15} />
-              </button>
+              />
             </div>
           ))}
           {sessions.length === 0 ? <p className="empty-note">No saved sessions</p> : null}
         </div>
-      </aside>
+      </div>
+    </aside>
+  );
+}
 
-      <main className="dashboard">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Current Workspace</p>
-            <h2>{selectedProject?.name ?? "No project selected"}</h2>
-            <p className="muted">{selectedProject?.description || selectedProject?.id || "Create a project in the existing app first."}</p>
+function RunHeader({ project, session, datasetSummary, stats, streaming, tweaks, playing, onTogglePlay, onView }) {
+  return (
+    <div className="run-header">
+      <div className="run-header__top">
+        <div className="run-header__identity">
+          <div className="run-header__name-row">
+            <span className="eyebrow">autopilot session</span>
+            <span className="run-header__name">{session.title || session.session_id}</span>
+            <span className="run-header__dataset">{datasetSummary}</span>
           </div>
-          <div className="top-actions">
-            <HealthPill health={health} />
-            <ThemeToggle theme={theme} onToggle={() => setTheme((value) => (value === "dark" ? "light" : "dark"))} />
-            <button className="secondary-button" onClick={() => void bootstrap()}>
-              <RefreshCw size={16} />
-              Refresh
-            </button>
-          </div>
-        </header>
-
-        {error ? (
-          <div className="alert">
-            <AlertTriangle size={18} />
-            <span>{error}</span>
-          </div>
-        ) : null}
-
-        {notice ? (
-          <div className="notice">
-            <CheckCircle2 size={18} />
-            <span>{notice}</span>
-          </div>
-        ) : null}
-
-        <section className="launch-band">
-          <div className="launch-copy">
-            <p className="eyebrow">Launch</p>
-            <h3>Autopilot run</h3>
-          </div>
-          <textarea
-            value={goal}
-            onChange={(event) => setGoal(event.target.value)}
-            placeholder="Predict churn, explain revenue drivers, find the best forecasting setup..."
-            disabled={disabledLaunch}
-          />
-          <button className="primary-button" onClick={() => void handleStart()} disabled={disabledLaunch}>
-            {loading ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
-            Start
-          </button>
-        </section>
-
-        <section className="metric-grid">
-          <Metric icon={Radio} label="Status" value={statusText(activeSession?.status)} detail={streaming ? "live stream connected" : "stream idle"} />
-          <Metric icon={ClipboardList} label="Steps" value={String(stats.steps)} detail={`${stats.charts} charts captured`} />
-          <Metric icon={Database} label="Datasets" value={String(datasets.length)} detail={`${stats.generatedDatasets} generated`} />
-          <Metric icon={FileText} label="Training Runs" value={String(stats.trainingRuns)} detail={`${stats.notes} notebook notes`} />
-        </section>
-
-        <div className="work-grid">
-          <section className="panel">
-            <PanelTitle icon={Database} title="Datasets" />
-            <DatasetUpload
-              file={datasetFile}
-              fileInputKey={fileInputKey}
-              name={datasetName}
-              tableName={datasetTableName}
-              loading={uploadingDataset}
-              disabled={loading || !projectId}
-              onFile={setDatasetFile}
-              onName={setDatasetName}
-              onTableName={setDatasetTableName}
-              onSubmit={() => void handleUploadDataset()}
-            />
-            <DatasetTable datasets={datasets} />
-          </section>
-
-          <section className="panel">
-            <PanelTitle icon={Activity} title="Lifecycle" />
-            <PhaseRail session={activeSession} />
-          </section>
+          <div className="run-header__goal">"{session.user_goal || project?.description || "Discover insight, build models, iterate."}"</div>
         </div>
+        <ViewToggle value={tweaks.view} onChange={onView} />
+      </div>
 
-        <section className="agent-lanes">
-          <PanelTitle icon={Radio} title="Agents" />
-          <div className="agent-grid">
-            {agentStates.map((agent) => {
-              const Icon = agent.icon;
-              const selected = selectedAgentIds.includes(agent.id);
+      <div className="run-header__row2">
+        {tweaks.showLegend ? (
+          <div className="run-header__legend">
+            <span className="eyebrow">agents</span>
+            {AGENTS.map((agent) => {
+              const count =
+                session.steps?.filter((step) => step.agent === agent.id).length ?? 0;
+              const isRunning =
+                session.status === "running" &&
+                session.steps?.at(-1)?.agent === agent.id;
               return (
-                <button
-                  type="button"
-                  className={`agent-card ${agent.tone} ${selected ? "selected" : ""}`}
-                  aria-pressed={selected}
-                  key={agent.id}
-                  onClick={() => toggleAgentFilter(agent.id)}
-                  title={`${selected ? "Remove" : "Show"} ${agent.title} activity`}
-                >
-                  <div className="agent-card-head">
-                    <Icon size={18} />
-                    <strong>{agent.title}</strong>
-                    <span className={`agent-state ${agent.state}`}>{agent.state}</span>
-                  </div>
-                  <p>{shortDetail(agent.lastStep)}</p>
-                  <small>{agent.steps} steps - {agent.charts} charts</small>
-                </button>
+                <div key={agent.id} className="run-header__legend-item">
+                  <span
+                    className={`agent-dot${isRunning ? " agent-dot--pulse" : ""}`}
+                    style={{
+                      width: 7,
+                      height: 7,
+                      background: agent.color,
+                      boxShadow: isRunning ? `0 0 12px ${agent.color}` : "none"
+                    }}
+                  />
+                  <span
+                    className={`run-header__legend-name${isRunning ? " is-running" : ""}`}
+                    style={{ color: isRunning ? agent.color : "var(--fg-2)" }}
+                  >
+                    {agent.title}
+                  </span>
+                  <span className="run-header__legend-count">×{count}</span>
+                </div>
               );
             })}
           </div>
-        </section>
-
-        {activeSession?.status === "waiting_for_input" ? (
-          <QuestionPanel
-            questions={questions}
-            answers={answers}
-            onAnswer={setAnswers}
-            onSubmit={() => void handleSubmitAnswers()}
-            loading={loading}
-          />
         ) : null}
 
-        <div className="content-grid">
-          <section className="panel timeline-panel">
-            <div className="timeline-toolbar">
-              <PanelTitle icon={ClipboardList} title="Activity Timeline" />
-              {selectedAgents.length > 0 ? (
-                <div className="filter-chips" aria-label="Selected agent filters">
-                  {selectedAgents.map((agent) => (
-                    <button
-                      type="button"
-                      className="filter-chip"
-                      key={agent.id}
-                      onClick={() => toggleAgentFilter(agent.id)}
-                      title={`Remove ${agent.title} filter`}
-                    >
-                      {agent.title}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="icon-button filter-clear"
-                    onClick={() => setSelectedAgentIds([])}
-                    title="Show all agents"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ) : (
-                <span className="filter-status">All agents</span>
-              )}
-            </div>
-            <Timeline steps={visibleTimelineSteps} filtered={selectedAgentIds.length > 0} theme={theme} />
-          </section>
+        <div style={{ flex: 1 }} />
 
-          <aside className="results-stack">
-            <ResultsPanel session={activeSession} projectId={projectId} />
-            <FollowUpPanel
-              session={activeSession}
-              value={followUp}
-              onChange={setFollowUp}
-              onSend={() => void handleFollowUp()}
-              loading={loading}
-            />
-          </aside>
+        <div className="run-header__controls">
+          <IconBtn icon={SkipBack} label="Jump to start" size={26} />
+          <IconBtn
+            icon={playing ? Pause : Play}
+            label={playing ? "Pause" : "Play replay"}
+            onClick={onTogglePlay}
+            size={26}
+            active={playing}
+          />
+          <IconBtn icon={SkipForward} label="Jump to now" size={26} />
+          <div style={{ width: 1, height: 16, background: "var(--ink-700)", margin: "0 4px" }} />
+          <span className="run-header__controls-speed">{tweaks.replaySpeed}</span>
         </div>
-      </main>
-    </div>
-  );
-}
 
-function HealthPill({ health }) {
-  if (!health) {
-    return (
-      <span className="health-pill error">
-        <AlertTriangle size={15} />
-        API offline
-      </span>
-    );
-  }
-  return (
-    <span className={`health-pill ${health.openai_configured ? "ok" : "warn"}`}>
-      {health.openai_configured ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
-      {health.openai_configured ? "Backend ready" : "Key missing"}
-    </span>
-  );
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-  detail
-}) {
-  return (
-    <div className="metric">
-      <Icon size={18} />
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </div>
-  );
-}
-
-function ThemeToggle({ theme, onToggle }) {
-  const dark = theme === "dark";
-  const Icon = dark ? Sun : Moon;
-  return (
-    <button
-      type="button"
-      className="secondary-button theme-toggle"
-      onClick={onToggle}
-      title={dark ? "Switch to light theme" : "Switch to dark theme"}
-    >
-      <Icon size={16} />
-      <span>{dark ? "Light" : "Dark"}</span>
-    </button>
-  );
-}
-
-function PanelTitle({ icon: Icon, title }) {
-  return (
-    <div className="panel-title">
-      <Icon size={17} />
-      <h3>{title}</h3>
-    </div>
-  );
-}
-
-function DatasetUpload({
-  file,
-  fileInputKey,
-  name,
-  tableName,
-  loading,
-  disabled,
-  onFile,
-  onName,
-  onTableName,
-  onSubmit
-}) {
-  return (
-    <form
-      className="upload-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onSubmit();
-      }}
-    >
-      <label className={`file-picker ${disabled ? "disabled" : ""}`}>
-        <Upload size={16} />
-        <span>{file?.name ?? "Choose file"}</span>
-        <input
-          key={fileInputKey}
-          type="file"
-          accept=".csv,.xlsx,.xls,.json,.db,.sqlite,.sqlite3"
-          disabled={disabled}
-          onChange={(event) => onFile(event.target.files?.[0] ?? null)}
-        />
-      </label>
-      <input
-        value={name}
-        onChange={(event) => onName(event.target.value)}
-        placeholder="Dataset name"
-        disabled={disabled}
-      />
-      <input
-        className="table-name-input"
-        value={tableName}
-        onChange={(event) => onTableName(event.target.value)}
-        placeholder="SQLite table"
-        disabled={disabled}
-      />
-      <button className="secondary-button" disabled={disabled || loading || !file}>
-        {loading ? <Loader2 className="spin" size={16} /> : <Upload size={16} />}
-        Upload
-      </button>
-    </form>
-  );
-}
-
-function DatasetTable({ datasets }) {
-  if (datasets.length === 0) {
-    return <p className="empty-note">No datasets registered for this project.</p>;
-  }
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Source</th>
-            <th>Rows</th>
-            <th>Columns</th>
-          </tr>
-        </thead>
-        <tbody>
-          {datasets.map((dataset) => (
-            <tr key={dataset.id}>
-              <td>{dataset.name}</td>
-              <td>{dataset.source_type}</td>
-              <td>{dataset.row_count.toLocaleString()}</td>
-              <td>{dataset.column_count.toLocaleString()}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function PhaseRail({ session }) {
-  return (
-    <div className="phase-rail">
-      {getPhaseState(session).map((phase) => (
-        <div className={`phase-step ${phase.state}`} key={phase.id}>
-          <Circle size={12} />
-          <span>{phase.title}</span>
-          <small>{phase.count}</small>
+        <div className="run-header__stats">
+          <em>steps</em> <strong>{stats.steps}</strong> <em>done ·</em>{" "}
+          <span className="accent">{stats.running}</span> <em>running</em>
+          {streaming ? <span className="accent"> · stream</span> : null}
         </div>
-      ))}
+      </div>
     </div>
   );
 }
 
-function QuestionPanel({
-  questions,
-  answers,
-  onAnswer,
-  onSubmit,
-  loading
-}) {
+function ViewToggle({ value, onChange }) {
+  const options = [
+    { id: "graph", icon: Workflow, label: "Graph", kbd: "G" },
+    { id: "timeline", icon: ListOrdered, label: "Timeline", kbd: "T" }
+  ];
   return (
-    <section className="question-panel">
-      <PanelTitle icon={MessageSquare} title="Input Needed" />
+    <div className="view-toggle">
+      <div
+        className="view-toggle__thumb"
+        style={{ left: value === "graph" ? 3 : "calc(50% + 1px)" }}
+      />
+      {options.map((opt) => {
+        const Icon = opt.icon;
+        const active = value === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            className={`view-toggle__btn${active ? " is-active" : ""}`}
+            onClick={() => onChange(opt.id)}
+            title={`Switch to ${opt.label} view`}
+          >
+            <Icon size={13} strokeWidth={1.75} />
+            {opt.label}
+            <span className="view-toggle__btn-kbd">{opt.kbd}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function EmptyCanvas({ project, datasets, health, goal, onGoal, onStart, loading, disabledLaunch }) {
+  return (
+    <div className="canvas-row">
+      <div className="empty-canvas">
+        <span className="eyebrow">{project ? "ready to launch" : "select a project"}</span>
+        <h1 className="empty-canvas__title">
+          {project?.name ?? "No project selected"}
+        </h1>
+        <p className="empty-canvas__hint">
+          {project?.description ||
+            "Pick a project from the workspace, upload a dataset, and describe what you want the agents to investigate."}
+        </p>
+        <div className="empty-canvas__launch">
+          <textarea
+            className="field"
+            value={goal}
+            onChange={(event) => onGoal(event.target.value)}
+            placeholder="Predict churn, explain revenue drivers, find the best forecasting setup..."
+            disabled={disabledLaunch}
+            style={{ minHeight: 96 }}
+          />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Btn
+              variant="primary"
+              size="lg"
+              icon={loading ? Loader2 : Play}
+              onClick={onStart}
+              disabled={disabledLaunch}
+            >
+              {loading ? "starting…" : "launch run"}
+            </Btn>
+            <span className="eyebrow" style={{ color: "var(--fg-4)" }}>
+              {datasets.length} datasets · {health?.openai_configured ? "backend ready" : "backend offline"}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuestionPanel({ questions, answers, onAnswer, onSubmit, loading }) {
+  return (
+    <section className="questions-panel">
+      <div className="section__title">
+        <span className="section__title-text">input needed</span>
+      </div>
       {questions.map((question, index) => (
-        <div className="question-item" key={`${question.question}-${index}`}>
-          <strong>{question.question}</strong>
-          {question.explanation ? <p>{question.explanation}</p> : null}
+        <div key={`${question.question}-${index}`} className="question-item">
+          <p>{question.question}</p>
+          {question.explanation ? (
+            <p className="question-item__explain">{question.explanation}</p>
+          ) : null}
           {question.alternatives?.length ? (
             <div className="alternatives">
               {question.alternatives.map((alternative) => (
@@ -844,6 +1024,7 @@ function QuestionPanel({
             </div>
           ) : null}
           <textarea
+            className="field"
             value={answers[index] ?? ""}
             onChange={(event) => {
               const next = [...answers];
@@ -853,197 +1034,168 @@ function QuestionPanel({
           />
         </div>
       ))}
-      <button className="primary-button" onClick={onSubmit} disabled={loading}>
-        {loading ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
-        Submit Answers
-      </button>
+      <div style={{ marginTop: 10 }}>
+        <Btn variant="primary" size="md" icon={loading ? Loader2 : Send} onClick={onSubmit} disabled={loading}>
+          submit answers
+        </Btn>
+      </div>
     </section>
   );
 }
 
-function Timeline({ steps, filtered, theme }) {
-  if (steps.length === 0) {
-    return (
-      <p className="empty-note">
-        {filtered ? "No activity for selected agents." : "Open or start a session to see activity."}
-      </p>
-    );
-  }
+function FollowUpBar({ value, onChange, onSend, loading }) {
   return (
-    <div className="timeline">
-      {[...steps].reverse().map((step) => (
-        <StepCard key={step.index} step={step} theme={theme} />
-      ))}
+    <div style={{ borderTop: "1px solid var(--ink-700)", padding: "10px 16px", display: "flex", gap: 8, alignItems: "center", background: "var(--ink-850)" }}>
+      <textarea
+        className="field"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Try another tuning round focused on recall..."
+        style={{ minHeight: 38, flex: 1 }}
+      />
+      <Btn variant="primary" size="md" icon={loading ? Loader2 : Send} onClick={onSend} disabled={loading || !value.trim()}>
+        send
+      </Btn>
     </div>
   );
 }
 
-function StepCard({ step, theme }) {
-  const agent = AGENTS.find((item) => item.id === step.agent);
-  const figure = parseFigure(step);
-  const figureLayout = figure?.layout ?? {};
-  const chartLayout = {
-    ...figureLayout,
-    autosize: true,
-    height: 360,
-    margin: { t: 36, r: 18, b: 48, l: 52, ...(figureLayout.margin ?? {}) },
-    ...(theme === "dark"
-      ? {
-          paper_bgcolor: figureLayout.paper_bgcolor ?? "#141e2b",
-          plot_bgcolor: figureLayout.plot_bgcolor ?? "#141e2b",
-          font: {
-            ...(figureLayout.font ?? {}),
-            color: figureLayout.font?.color ?? "#e6eef8"
-          }
-        }
-      : {})
-  };
-  return (
-    <article className={`step-card ${step.kind}`}>
-      <div className="step-meta">
-        <span>#{step.index}</span>
-        <span>{agent?.title ?? step.agent}</span>
-        <span>{stepKindLabel(step.kind)}</span>
-      </div>
-      <h4>{step.title}</h4>
-      {step.kind === "chart" && figure ? (
-        <Plot
-          data={figure.data ?? []}
-          layout={chartLayout}
-          config={{ displaylogo: false, responsive: true }}
-          useResizeHandler
-          style={{ width: "100%", height: "360px" }}
-        />
-      ) : step.detail ? (
-        <div className="markdown">
-          <ReactMarkdown>{step.detail}</ReactMarkdown>
-        </div>
-      ) : null}
-    </article>
-  );
-}
-
-function ResultsPanel({ session, projectId }) {
-  if (!session) {
+function LiveStream({ session }) {
+  const lines = useMemo(() => buildStreamLines(session), [session]);
+  if (lines.length === 0) {
     return (
-      <section className="panel">
-        <PanelTitle icon={FileText} title="Results" />
-        <p className="empty-note">Open or start a session.</p>
-      </section>
+      <div className="live-stream">
+        <div className="live-stream__label">
+          <span className="live-stream__label-dot" />
+          <span className="live-stream__label-text">stream</span>
+        </div>
+        <div className="live-stream__track">
+          <div className="live-stream__marquee">
+            <span className="live-stream__msg" style={{ paddingLeft: 12 }}>
+              waiting for agent activity…
+            </span>
+          </div>
+        </div>
+      </div>
     );
   }
-
   return (
-    <section className="panel">
-      <PanelTitle icon={FileText} title="Results" />
-      <div className="result-actions">
-        <a className="secondary-button" href={notebookUrl(projectId, session.session_id)}>
-          <Download size={16} />
-          Notebook
-        </a>
+    <div className="live-stream">
+      <div className="live-stream__label">
+        <span className="live-stream__label-dot" />
+        <span className="live-stream__label-text">stream</span>
       </div>
-
-      {session.training_runs.length ? (
-        <>
-          <h4>Training Runs</h4>
-          <div className="table-wrap compact">
-            <table>
-              <thead>
-                <tr>
-                  <th>Run</th>
-                  <th>Model</th>
-                  <th>Target</th>
-                  <th>Metrics</th>
-                </tr>
-              </thead>
-              <tbody>
-                {session.training_runs.map((run, index) => (
-                  <tr key={`${run.run_id ?? "run"}-${index}`}>
-                    <td>{run.run_id ?? index + 1}</td>
-                    <td>{run.best_model ?? "-"}</td>
-                    <td>{run.target ?? "-"}</td>
-                    <td>{formatMetrics(run.best_metrics)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      ) : null}
-
-      {session.new_datasets.length ? (
-        <>
-          <h4>Generated Datasets</h4>
-          <ul className="plain-list">
-            {session.new_datasets.map((dataset) => (
-              <li key={dataset.id}>{dataset.name} - {dataset.row_count.toLocaleString()} rows</li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-
-      {session.notebook.length ? (
-        <>
-          <h4>Notebook Notes</h4>
-          <ul className="plain-list">
-            {session.notebook.slice(-6).map((note, index) => (
-              <li key={`${note}-${index}`}>{note}</li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-
-      {session.strategy_summary ? (
-        <>
-          <h4>Final Report</h4>
-          <div className="markdown report">
-            <ReactMarkdown>{session.strategy_summary}</ReactMarkdown>
-          </div>
-        </>
-      ) : null}
-    </section>
+      <div className="live-stream__track">
+        <div className="live-stream__marquee">
+          {[...lines, ...lines].map((line, idx) => {
+            const agent = agentFor(line.agent);
+            return (
+              <div key={idx} className="live-stream__item">
+                <span className="live-stream__t">#{line.index}</span>
+                <span
+                  className="agent-dot"
+                  style={{ width: 5, height: 5, background: agent.color }}
+                />
+                <span className="live-stream__agent">{agent.short}</span>
+                <span className="live-stream__msg">{line.text}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
-function FollowUpPanel({
-  session,
-  value,
-  onChange,
-  onSend,
-  loading
-}) {
-  const disabled = !session || session.status === "running" || session.status === "waiting_for_input" || loading;
-  return (
-    <section className="panel">
-      <PanelTitle icon={MessageSquare} title="Follow Up" />
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="Try another tuning round focused on recall..."
-        disabled={disabled}
-      />
-      <button className="primary-button" onClick={onSend} disabled={disabled || !value.trim()}>
-        {loading ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
-        Send
-      </button>
-    </section>
-  );
-}
-
-function formatMetrics(metrics) {
-  if (!metrics) return "-";
-  return Object.entries(metrics)
-    .map(([key, value]) => `${key}: ${Number(value).toFixed(4)}`)
-    .join(", ");
-}
-
-function getStats(session) {
+function buildStreamLines(session) {
   const steps = visibleActivitySteps(session?.steps ?? []);
-  return {
-    steps: steps.length,
-    charts: steps.filter((step) => step.kind === "chart").length,
-    trainingRuns: session?.training_runs.length ?? 0,
-    generatedDatasets: session?.new_datasets.length ?? 0,
-    notes: session?.notebook.length ?? 0
-  };
+  return steps.slice(-6).map((step) => ({
+    index: step.index,
+    agent: step.agent,
+    text: (step.title || step.detail || step.kind).slice(0, 80)
+  }));
+}
+
+function TweaksPanel({ tweaks, onChange, onClose }) {
+  return (
+    <div className="tweaks">
+      <div className="tweaks__head">
+        <b>Tweaks</b>
+        <IconBtn icon={X} label="Close" size={22} onClick={onClose} />
+      </div>
+      <div className="tweaks__body">
+        <div className="tweaks__section">View</div>
+        <SegRow
+          label="Layout"
+          value={tweaks.view}
+          options={[
+            { value: "graph", label: "Graph" },
+            { value: "timeline", label: "Timeline" }
+          ]}
+          onChange={(v) => onChange("view", v)}
+        />
+        <SegRow
+          label="Density"
+          value={tweaks.density}
+          options={[
+            { value: "compact", label: "Compact" },
+            { value: "comfortable", label: "Comfortable" }
+          ]}
+          onChange={(v) => onChange("density", v)}
+        />
+        <div className="tweaks__section">Run</div>
+        <div className="tweaks__row">
+          <span className="tweaks__label">Replay speed</span>
+          <select
+            className="tweaks__select"
+            value={tweaks.replaySpeed}
+            onChange={(event) => onChange("replaySpeed", event.target.value)}
+          >
+            {["1×", "2×", "10×", "live"].map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        </div>
+        <Toggle label="Show workspace" value={tweaks.showWorkspace} onChange={(v) => onChange("showWorkspace", v)} />
+        <Toggle label="Show agent legend" value={tweaks.showLegend} onChange={(v) => onChange("showLegend", v)} />
+        <Toggle label="Show live stream" value={tweaks.showStream} onChange={(v) => onChange("showStream", v)} />
+      </div>
+    </div>
+  );
+}
+
+function SegRow({ label, value, options, onChange }) {
+  return (
+    <div className="tweaks__row">
+      <span className="tweaks__label">{label}</span>
+      <div className="tweaks__seg">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={value === opt.value ? "is-on" : ""}
+            onClick={() => onChange(opt.value)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ label, value, onChange }) {
+  return (
+    <div className="tweaks__row">
+      <span className="tweaks__label">{label}</span>
+      <button
+        type="button"
+        className={`tweaks__toggle${value ? " is-on" : ""}`}
+        aria-pressed={value}
+        onClick={() => onChange(!value)}
+      >
+        <i />
+      </button>
+    </div>
+  );
 }

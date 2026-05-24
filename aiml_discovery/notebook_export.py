@@ -100,6 +100,7 @@ def _setup_cell() -> nbformat.NotebookNode:
         "import joblib\n"
         "import numpy as np\n"
         "import pandas as pd\n"
+        "import plotly.express as px\n"
         "import plotly.io as pio\n"
         "\n"
         "pd.set_option('display.max_columns', 80)\n"
@@ -143,6 +144,147 @@ def _python_repr(value: Any) -> str:
         return repr(value)
     except Exception:
         return "None"
+
+
+def _chart_code(step: AutopilotStep) -> str | None:
+    """Reconstruct a runnable plotly-express snippet for an EDA chart step.
+
+    Returns None when chart_type/params weren't recorded (older sessions);
+    the caller should fall back to ``pio.from_json`` in that case.
+    """
+    data = _safe_data(step)
+    chart_type = data.get("chart_type")
+    if not chart_type:
+        return None
+    params: dict[str, Any] = data.get("chart_params") or {}
+    dataset_name = data.get("dataset_name") or "df"
+    df = f"df_{_safe_varname(dataset_name)}"
+
+    def _q(value: Any) -> str:
+        return repr(value)
+
+    if chart_type == "histogram":
+        col = params.get("column")
+        bins = int(params.get("bins", 30))
+        return (
+            f"# Histogram of {col}\n"
+            f"fig = px.histogram(\n"
+            f"    {df}, x={_q(col)}, nbins={bins},\n"
+            f"    title={_q(f'Distribution of {col}')},\n"
+            f"    template='plotly_white',\n"
+            f")\n"
+            f"fig"
+        )
+
+    if chart_type == "bar":
+        col = params.get("column")
+        top_n = int(params.get("top_n", 20))
+        return (
+            f"# Top-{top_n} value counts of {col}\n"
+            f"_vc = {df}[{_q(col)}].value_counts().head({top_n}).reset_index()\n"
+            f"_vc.columns = ['value', 'count']\n"
+            f"fig = px.bar(\n"
+            f"    _vc, x='value', y='count',\n"
+            f"    title={_q(f'Value Counts: {col} (top {top_n})')},\n"
+            f"    template='plotly_white',\n"
+            f"    labels={{'value': {_q(col)}}},\n"
+            f")\n"
+            f"fig"
+        )
+
+    if chart_type == "scatter":
+        x_col = params.get("x_column")
+        y_col = params.get("y_column")
+        color_col = params.get("color_column")
+        color_arg = f"\n    color={_q(color_col)}," if color_col else ""
+        return (
+            f"# Scatter of {x_col} vs {y_col}{f' coloured by {color_col}' if color_col else ''}\n"
+            f"fig = px.scatter(\n"
+            f"    {df}.head(2000), x={_q(x_col)}, y={_q(y_col)},{color_arg}\n"
+            f"    title={_q(f'Scatter: {x_col} vs {y_col}')},\n"
+            f"    template='plotly_white', opacity=0.6,\n"
+            f")\n"
+            f"fig"
+        )
+
+    if chart_type == "correlation_heatmap":
+        return (
+            f"# Correlation heatmap across numeric columns of {dataset_name}\n"
+            f"_num = {df}.select_dtypes(include='number')\n"
+            f"_corr = _num.corr()\n"
+            f"fig = px.imshow(\n"
+            f"    _corr, title={_q(f'Correlation — {dataset_name}')},\n"
+            f"    color_continuous_scale='RdBu_r', zmin=-1, zmax=1,\n"
+            f"    text_auto='.2f', template='plotly_white',\n"
+            f")\n"
+            f"fig"
+        )
+
+    if chart_type == "box":
+        col = params.get("column")
+        gb = params.get("group_by")
+        x_arg = f", x={_q(gb)}" if gb else ""
+        comment = f"Box plot of {col}" + (f" grouped by {gb}" if gb else "")
+        return (
+            f"# {comment}\n"
+            f"fig = px.box(\n"
+            f"    {df}, y={_q(col)}{x_arg},\n"
+            f"    title={_q(f'Box Plot: {col}')},\n"
+            f"    template='plotly_white',\n"
+            f")\n"
+            f"fig"
+        )
+
+    if chart_type == "violin":
+        col = params.get("column")
+        gb = params.get("group_by")
+        x_arg = f", x={_q(gb)}" if gb else ""
+        comment = f"Violin plot of {col}" + (f" grouped by {gb}" if gb else "")
+        return (
+            f"# {comment}\n"
+            f"fig = px.violin(\n"
+            f"    {df}, y={_q(col)}{x_arg},\n"
+            f"    box=True, points='outliers',\n"
+            f"    title={_q(f'Violin: {col}')},\n"
+            f"    template='plotly_white',\n"
+            f")\n"
+            f"fig"
+        )
+
+    if chart_type == "pairplot":
+        cols = list(params.get("columns") or [])
+        color_col = params.get("color_column")
+        color_arg = f"\n    color={_q(color_col)}," if color_col else ""
+        return (
+            f"# Pairplot across {cols}\n"
+            f"_cols = {cols!r}\n"
+            f"fig = px.scatter_matrix(\n"
+            f"    {df}.head(2000)[_cols],\n"
+            f"    dimensions=_cols,{color_arg}\n"
+            f"    title='Pairplot: ' + ', '.join(_cols),\n"
+            f"    template='plotly_white',\n"
+            f")\n"
+            f"fig.update_traces(diagonal=dict(visible=False), showupperhalf=False)\n"
+            f"fig"
+        )
+
+    if chart_type == "missing_heatmap":
+        return (
+            f"# Missing-value pattern in {dataset_name} (first 100 rows)\n"
+            f"_mask = {df}.isnull()\n"
+            f"_missing_cols = _mask.columns[_mask.any()].tolist()\n"
+            f"_sample = _mask[_missing_cols].head(100).astype(int)\n"
+            f"fig = px.imshow(\n"
+            f"    _sample.T,\n"
+            f"    title={_q(f'Missing Values — {dataset_name} (first 100 rows)')},\n"
+            f"    color_continuous_scale=[[0, '#f0f0f0'], [1, '#e53e3e']],\n"
+            f"    labels={{'x': 'Row', 'y': 'Column', 'color': 'Missing'}},\n"
+            f"    template='plotly_white',\n"
+            f")\n"
+            f"fig"
+        )
+
+    return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -234,22 +376,34 @@ def _phase_narrative(
 
 
 def _phase_charts(steps: list[AutopilotStep]) -> list[nbformat.NotebookNode]:
-    """Replay every chart yielded inside this phase as runnable cells."""
+    """Replay every chart yielded inside this phase as runnable cells.
+
+    Prefers a readable ``px.<kind>(...)`` snippet built from the captured
+    chart_type/params. Falls back to ``pio.from_json`` only when those
+    params weren't recorded (older sessions).
+    """
     out: list[nbformat.NotebookNode] = []
     for step in steps:
         if step.kind != "chart":
             continue
-        figure_json = _figure_from_step(step)
-        if not figure_json:
-            continue
         title = step.title or "Chart"
         out.append(_md(f"### Chart: {title}\n\n{step.detail}".rstrip()))
-        literal = json.dumps(figure_json)
-        out.append(_code(
-            f"_fig_spec = {literal}\n"
-            "fig = pio.from_json(_fig_spec)\n"
-            "fig"
-        ))
+
+        code = _chart_code(step)
+        if code is not None:
+            out.append(_code(code))
+            continue
+
+        figure_json = _figure_from_step(step)
+        if figure_json:
+            literal = json.dumps(figure_json)
+            out.append(_code(
+                "# Chart params weren't captured for this step — "
+                "rendering from the saved Plotly JSON.\n"
+                f"_fig_spec = {literal}\n"
+                "fig = pio.from_json(_fig_spec)\n"
+                "fig"
+            ))
     return out
 
 
@@ -591,27 +745,27 @@ def _transcript_cells_for_step(step: AutopilotStep) -> list[nbformat.NotebookNod
             return []
         return [_md(f"{prefix} — _reasoning_\n\n{body}")]
 
-    if step.kind == "tool_call":
-        args_preview = step.detail.strip()
-        if len(args_preview) > 600:
-            args_preview = args_preview[:600] + "\n…"
-        return [_md(
-            f"{prefix} — called `{step.title}`\n\n"
-            f"```json\n{args_preview}\n```"
-        )]
-
-    if step.kind == "tool_result":
-        return [_md(f"{prefix} — result: {step.title}\n\n{step.detail}")]
+    if step.kind in ("tool_call", "tool_result"):
+        # Suppressed in the human-readable transcript — the phase narratives
+        # above already capture what each agent did, and the raw tool args
+        # / results are mostly noise for a reader.
+        return []
 
     if step.kind == "chart":
-        figure_json = _figure_from_step(step)
         cells: list[nbformat.NotebookNode] = [
             _md(f"{prefix} — chart: {step.title}\n\n{step.detail}".rstrip())
         ]
+        code = _chart_code(step)
+        if code is not None:
+            cells.append(_code(code))
+            return cells
+        figure_json = _figure_from_step(step)
         if figure_json:
             literal = json.dumps(figure_json)
             cells.append(_code(
-                f"_fig_spec = {literal}\npio.from_json(_fig_spec)"
+                "# Chart params weren't captured for this step — "
+                "rendering from the saved Plotly JSON.\n"
+                f"_fig_spec = {literal}\nfig = pio.from_json(_fig_spec)\nfig"
             ))
         return cells
 
@@ -668,8 +822,9 @@ def _transcript_cells_for_step(step: AutopilotStep) -> list[nbformat.NotebookNod
         return [_md(f"{prefix} — note: {step.detail}")]
 
     if step.kind in ("agent_start", "agent_end"):
-        bullet = "▶" if step.kind == "agent_start" else "■"
-        return [_md(f"{prefix} — {bullet} {step.title}")]
+        # Agent lifecycle markers — not useful in the transcript; the phase
+        # narratives list which agents participated.
+        return []
 
     if step.kind == "summary":
         return [_md(f"{prefix} — final strategy\n\n{step.detail}")]
