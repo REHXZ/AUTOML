@@ -48,6 +48,24 @@ Common AI Autopilot endpoints:
 - `POST /api/projects/{project_id}/autopilot/sessions/{session_id}/messages` sends follow-up work to a completed session.
 - `GET /api/projects/{project_id}/autopilot/sessions/{session_id}/notebook` downloads the session notebook.
 
+## Run the React Autopilot Dashboard
+
+The React dashboard lives in `react-frontend` and focuses on live AI Autopilot
+session monitoring. It uses the FastAPI server above and datasets already
+registered in a project.
+
+```powershell
+cd react-frontend
+npm.cmd install
+npm.cmd run dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173
+```
+
 By default, project data is stored outside the repository at:
 
 ```text

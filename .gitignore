@@ -13,3 +13,7 @@ local_projects/
 *.joblib
 *.log
 .tmp_pytest_*/
+react-frontend/node_modules/
+react-frontend/dist/
+react-frontend/.npm-cache/
+react-frontend/*.tsbuildinfo

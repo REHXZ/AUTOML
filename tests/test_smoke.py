@@ -16,6 +16,20 @@ def test_api_app_has_valid_python_syntax():
     ast.parse(api_path.read_text(encoding="utf-8"))
 
 
+def test_api_health_reports_openai_readiness():
+    source = Path("aiml_discovery/api.py").read_text(encoding="utf-8")
+
+    assert "openai_configured" in source
+    assert "OPENAI_API_KEY" in source
+
+
+def test_api_exposes_browser_file_upload():
+    source = Path("aiml_discovery/api.py").read_text(encoding="utf-8")
+
+    assert "/api/projects/{project_id}/datasets/upload" in source
+    assert "UploadFile" in source
+
+
 def test_streamlit_workflow_pages_are_present():
     source = Path("app.py").read_text(encoding="utf-8")
 

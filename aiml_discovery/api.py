@@ -20,7 +20,7 @@ from threading import Lock, Thread
 from typing import Any, Generator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, Response, status as http_status
+from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status as http_status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -116,8 +116,12 @@ _jobs_lock = Lock()
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "aiml-discovery-api"}
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "service": "aiml-discovery-api",
+        "openai_configured": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
+    }
 
 
 @app.get("/api/projects")
@@ -129,7 +133,10 @@ def list_projects_api() -> dict[str, Any]:
 @app.post("/api/projects", status_code=http_status.HTTP_201_CREATED)
 def create_project_api(request: CreateProjectRequest) -> dict[str, Any]:
     store = ProjectStore()
-    project = store.create_project(request.name, request.description)
+    try:
+        project = store.create_project(request.name, request.description)
+    except ValueError as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return {"project": _project_payload(project)}
 
 
@@ -145,6 +152,56 @@ def list_datasets_api(project_id: str) -> dict[str, Any]:
     store = ProjectStore()
     _project_or_404(store, project_id)
     datasets = store.list_datasets(project_id)
+    return {"project_id": project_id, "datasets": [dataset.to_dict() for dataset in datasets]}
+
+
+@app.post(
+    "/api/projects/{project_id}/datasets/upload",
+    status_code=http_status.HTTP_201_CREATED,
+)
+async def upload_dataset_api(
+    project_id: str,
+    file: UploadFile = File(...),
+    name: str | None = Form(default=None),
+    table_name: str | None = Form(default=None),
+) -> dict[str, Any]:
+    store = ProjectStore()
+    _project_or_404(store, project_id)
+
+    filename = Path(file.filename or "").name
+    if not filename:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Dataset filename is required.",
+        )
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Dataset file is empty.",
+        )
+
+    saved_path = store.save_dataset_file(project_id, filename, data)
+    try:
+        datasets = _register_dataset_path(
+            store=store,
+            project_id=project_id,
+            path=saved_path,
+            name=name.strip() if name and name.strip() else None,
+            source_name=filename,
+            table_name=table_name.strip() if table_name and table_name.strip() else None,
+        )
+    except HTTPException:
+        saved_path.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        saved_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
     return {"project_id": project_id, "datasets": [dataset.to_dict() for dataset in datasets]}
 
 
