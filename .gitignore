@@ -13,3 +13,5 @@ local_projects/
 *.joblib
 *.log
 .tmp_pytest_*/
+*.npm-cache
+*node_modules/
