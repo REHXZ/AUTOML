@@ -201,8 +201,8 @@ def build_azure_client(api_key: str):
 def get_deployment() -> str:
     api_base = os.environ.get("OPENAI_API_BASE", "").strip()
     if api_base:
-        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4-mini")
-    return os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
+        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4")
+    return os.environ.get("OPENAI_MODEL", "gpt-5.4")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

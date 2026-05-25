@@ -1,8 +1,8 @@
 import { MessageCircleQuestion } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
-import { AGENTS, AGENT_ORDER } from "./constants";
-import { AgentDot } from "./primitives";
+import { AGENTS, AGENT_ORDER } from "../constants";
+import { AgentDot } from "../ui";
 import {
   agentFor,
   buildStepLayout,
@@ -11,7 +11,7 @@ import {
   formatDur,
   inferStepTitle,
   isRunningStep
-} from "./utils";
+} from "../utils";
 
 export default function SwimlaneGraph({
   session,
@@ -73,9 +73,6 @@ export default function SwimlaneGraph({
 
   const viewportRef = useRef(null);
 
-  // Keep the latest running step in view as the run progresses. Smooth scroll
-  // both axes; only nudge when the step is actually off-screen so we don't
-  // fight the user if they're panning around manually.
   useEffect(() => {
     const target = runningStep && layout[runningStep.index];
     const v = viewportRef.current;

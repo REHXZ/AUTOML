@@ -18,7 +18,7 @@ import { useEffect } from "react";
 import Plot from "react-plotly.js";
 import ReactMarkdown from "react-markdown";
 
-import { IconBtn, Pill } from "./primitives";
+import { IconBtn, Pill } from "../ui";
 import {
   agentFor,
   clockAt,
@@ -30,7 +30,7 @@ import {
   parseFigure,
   sessionBaseTimeMs,
   stepStartSecs
-} from "./utils";
+} from "../utils";
 
 export default function DetailDrawer({ session, step, theme, onClose }) {
   useEffect(() => {
@@ -378,7 +378,6 @@ function extractDatasetSummary(step, session) {
   const rows = data.row_count ?? data.rows ?? null;
   const cols = data.column_count ?? data.cols ?? null;
   if (rows && cols) return `${name} · ${Number(rows).toLocaleString()} × ${cols}`;
-  // Fall back to the latest session.new_datasets entry.
   const latest = session?.new_datasets?.at(-1);
   if (latest) return `${latest.name} · ${Number(latest.row_count).toLocaleString()} rows`;
   return name;

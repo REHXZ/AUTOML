@@ -1,4 +1,4 @@
-import { AGENTS, AGENT_BY_ID, FALLBACK_AGENT, PHASES, STEP_LABELS } from "./constants";
+import { AGENTS, AGENT_BY_ID, FALLBACK_AGENT, PHASES, STEP_LABELS } from "../constants";
 
 export function formatDate(value) {
   if (!value) return "Never";
@@ -113,13 +113,11 @@ export function getAgentState(session) {
   });
 }
 
-// ── New helpers for the agent run viewer ─────────────────────────────────────
 export function agentFor(stepOrId) {
   const id = typeof stepOrId === "string" ? stepOrId : stepOrId?.agent;
   return AGENT_BY_ID[id] ?? FALLBACK_AGENT;
 }
 
-// Map the API's step.kind into one of the design's narrative kinds.
 const DESIGN_KIND_MAP = {
   thought: "plan",
   ask: "ask_user",
@@ -135,7 +133,6 @@ export function designKind(step) {
   if (!step) return "observation";
   const direct = DESIGN_KIND_MAP[step.kind];
   if (direct) return direct;
-  // Heuristic on agent identity for unknown kinds.
   if (step.agent === "researcher") return "research";
   if (step.agent === "eda") return "eda";
   if (step.agent === "feature_engineering") return "transform";
@@ -155,6 +152,7 @@ const DESIGN_KIND_LABELS = {
   train: "train",
   review: "review"
 };
+
 export function designKindLabel(kind) {
   return DESIGN_KIND_LABELS[kind] ?? kind;
 }
@@ -163,8 +161,6 @@ export function isTerminalStatus(status) {
   return status === "idle" || status === "complete" || status === "error";
 }
 
-// Build a column index for swimlane positioning: each visible step gets a
-// monotonically increasing column based on its index order.
 export function buildStepLayout(steps) {
   const visible = visibleActivitySteps(steps);
   const byIndex = [...visible].sort((a, b) => a.index - b.index);
@@ -175,9 +171,6 @@ export function buildStepLayout(steps) {
   return { visible: byIndex, cols, count: byIndex.length };
 }
 
-// Best-effort timestamp helpers. The API does not return durations, so we
-// derive minimal sortable times from step.created_at when present, otherwise
-// fall back to monotonic index-based timestamps for display.
 export function stepStartSecs(step, base) {
   const ts = step?.created_at;
   if (!ts || !base) return null;
@@ -217,8 +210,6 @@ export function isRunningStep(step, session) {
 }
 
 export function extractMetrics(step) {
-  // Training runs surface their metrics at session.training_runs; per-step
-  // detail is usually markdown. We pull anything numeric out of step.data.
   const data = step?.data ?? {};
   const m = data.metrics ?? data.best_metrics ?? null;
   if (m && typeof m === "object") return m;

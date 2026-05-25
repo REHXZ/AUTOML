@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+from ..dtype_coercion import coerce_dtypes
 from ..ingestion import load_dataset
 from ..logging_setup import configure_logging
 from ..profiling import profile_dataframe
@@ -219,12 +220,23 @@ class EdaAgent(BaseAgent):
             return json.dumps({"status": "noted"}), None, True
         return json.dumps({"error": f"Unknown tool: {name}"}), None, False
 
+    def _load_coerced(self, ds):
+        """Load a dataset and apply automatic dtype coercion. Returns (df, changes)."""
+        loaded = load_dataset(ds.file_path, ds.table_name)
+        df, changes = coerce_dtypes(loaded.dataframe)
+        if changes:
+            log.info(
+                "dtype_coercion | dataset=%s coerced %d column(s): %s",
+                ds.name, len(changes), changes,
+            )
+        return df, changes
+
     def _profile(self, dataset_id: str) -> tuple[str, AutopilotStep | None, bool]:
         ds = self._ctx.find_dataset(dataset_id)
         if ds is None:
             return json.dumps({"error": f"Dataset '{dataset_id}' not found."}), None, False
-        loaded = load_dataset(ds.file_path, ds.table_name)
-        profile = profile_dataframe(loaded.dataframe)
+        df, coercions = self._load_coerced(ds)
+        profile = profile_dataframe(df)
         trimmed = {
             **profile,
             "columns": [
@@ -232,6 +244,8 @@ class EdaAgent(BaseAgent):
                 for col in profile.get("columns", [])
             ],
         }
+        if coercions:
+            trimmed["dtype_coercions"] = coercions
         step = self._step(
             "tool_result",
             f"Profiled: {ds.name}",
@@ -239,6 +253,7 @@ class EdaAgent(BaseAgent):
                 f"{profile['row_count']} rows × {profile['column_count']} cols | "
                 f"{profile['missing_pct']:.1f}% missing | "
                 f"{profile['duplicate_rows']} duplicates"
+                + (f" | {len(coercions)} dtype(s) coerced" if coercions else "")
             ),
             data={"dataset_name": ds.name, "profile": to_json_safe(trimmed)},
         )
@@ -284,9 +299,9 @@ class EdaAgent(BaseAgent):
             ds.name, chart_type, params,
         )
 
-        loaded = load_dataset(ds.file_path, ds.table_name)
+        df, _ = self._load_coerced(ds)
         fig, title, description = _build_figure(
-            loaded.dataframe,
+            df,
             ds.name,
             chart_type,
             params,

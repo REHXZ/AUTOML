@@ -152,12 +152,7 @@ export function notebookUrl(projectId, sessionId) {
   );
 }
 
-export function connectSessionEvents(
-  projectId,
-  sessionId,
-  fromIndex,
-  handlers
-) {
+export function connectSessionEvents(projectId, sessionId, fromIndex, handlers) {
   const source = new EventSource(
     apiUrl(
       `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/events?from_index=${fromIndex}`
