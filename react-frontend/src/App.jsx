@@ -24,6 +24,7 @@ import {
   notebookUrl,
   sendFollowUp,
   startSession,
+  stopSession,
   submitAnswers,
   uploadDataset
 } from "./api";
@@ -79,11 +80,11 @@ export default function App() {
   const [uploadingDataset, setUploadingDataset] = useState(false);
   const [error, setError] = useState(null);
   const [streaming, setStreaming] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [tweaks, setTweaks] = useState(loadTweaks);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [hoverIndex, setHoverIndex] = useState(null);
-  const [playing, setPlaying] = useState(true);
   const closeStreamRef = useRef(null);
 
   const selectedProject = projects.find((project) => project.id === projectId) ?? null;
@@ -148,6 +149,7 @@ export default function App() {
         },
         onStatus: async (payload) => {
           setStreaming(false);
+          setStopping(false);
           setActiveSession((current) => {
             if (!current || current.session_id !== sessionId) return current;
             return {
@@ -169,7 +171,9 @@ export default function App() {
         },
         onError: () => {
           setStreaming(false);
+          setStopping(false);
           setError("Live event stream disconnected. Refresh the session to reconnect.");
+          void refreshSession(id, sessionId);
         }
       });
     },
@@ -410,6 +414,48 @@ export default function App() {
     }
   };
 
+  const handleNewRun = () => {
+    closeStream();
+    setActiveSession(null);
+    setFollowUp("");
+    setSelectedIndex(null);
+  };
+
+  const handlePause = async () => {
+    if (!projectId || !activeSession) return;
+    setStopping(true);
+    setError(null);
+    try {
+      await stopSession(projectId, activeSession.session_id);
+      const loaded = await refreshSession(projectId, activeSession.session_id);
+      // If the agent already stopped by the time the HTTP call returned, unblock immediately.
+      // If still running, stopping stays true and the SSE status:idle event will clear it.
+      if (loaded.status !== "running") {
+        setStopping(false);
+      }
+    } catch (err) {
+      setStopping(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleResume = async (message) => {
+    const text = (message || "Continue the analysis from where you left off.").trim();
+    if (!projectId || !activeSession) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await sendFollowUp(projectId, activeSession.session_id, text);
+      const loaded = await refreshSession(projectId, activeSession.session_id);
+      openEventStream(projectId, activeSession.session_id, maxStepIndex(loaded.steps));
+      setFollowUp("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const stats = useMemo(() => getSessionStats(activeSession), [activeSession]);
   const datasetSummary = useMemo(() => {
     if (!datasets.length) return "no dataset";
@@ -492,9 +538,10 @@ export default function App() {
                 datasetSummary={datasetSummary}
                 stats={stats}
                 streaming={streaming}
+                stopping={stopping}
                 tweaks={tweaks}
-                playing={playing}
-                onTogglePlay={() => setPlaying((p) => !p)}
+                onPause={() => void handlePause()}
+                onResume={() => void handleResume()}
                 onView={(view) => setTweak("view", view)}
               />
 
@@ -542,12 +589,15 @@ export default function App() {
               ) : null}
 
               {activeSession.status !== "waiting_for_input" &&
-              activeSession.status !== "running" ? (
+              (activeSession.status !== "running" || stopping) ? (
                 <FollowUpBar
                   value={followUp}
                   onChange={setFollowUp}
                   onSend={() => void handleFollowUp()}
-                  loading={loading}
+                  onResume={(msg) => void handleResume(msg)}
+                  onNewRun={handleNewRun}
+                  isPaused={activeSession.status === "idle" || stopping}
+                  loading={loading || stopping}
                 />
               ) : null}
             </>

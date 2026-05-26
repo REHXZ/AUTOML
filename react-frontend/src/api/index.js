@@ -146,6 +146,13 @@ export function sendFollowUp(projectId, sessionId, message) {
   );
 }
 
+export function stopSession(projectId, sessionId) {
+  return request(
+    `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/stop`,
+    { method: "POST" }
+  );
+}
+
 export function notebookUrl(projectId, sessionId) {
   return apiUrl(
     `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/notebook`

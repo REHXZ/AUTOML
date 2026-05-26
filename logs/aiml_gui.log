@@ -10773,3 +10773,574 @@ Goal:
 2026-05-25 14:43:18 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
 2026-05-25 14:43:21 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
 2026-05-25 14:43:25 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 14:55:08 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 14:55:12 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 14:55:15 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 14:55:19 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 14:55:23 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 14:55:27 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 14:55:31 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 14:55:35 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 14:59:00 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=0 messages=2
+2026-05-25 14:59:03 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 14:59:03 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'business_understanding', 'rationale': 'Frame the forecasting task, infer a workable unit of prediction from the dataset, and establish the success criterion before profiling data.'}
+2026-05-25 14:59:03 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | business_understanding → business_understanding rationale='Frame the forecasting task, infer a workable unit of prediction from the dataset, and establish the success criterion be'
+2026-05-25 14:59:03 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=1 messages=4
+2026-05-25 14:59:06 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 14:59:06 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=record_observation args_preview={'text': 'Initial plan: treat this as a univariate/multivariate demand forecasting task restricted to one customer-product pair selected from the data based on sufficient history and non-trivial demand variation. I will first profile the dataset to identify date, customer, product, and quantity colu
+2026-05-25 14:59:06 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=2 messages=6
+2026-05-25 14:59:08 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 14:59:08 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'data_understanding', 'rationale': 'Profile the orders dataset to identify the quantity target, date grain, customer/product identifiers, and which customer-product combinations have enough monthly history for forecasting.'}
+2026-05-25 14:59:08 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | business_understanding → data_understanding rationale='Profile the orders dataset to identify the quantity target, date grain, customer/product identifiers, and which customer'
+2026-05-25 14:59:08 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=3 messages=8
+2026-05-25 14:59:12 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 14:59:12 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=delegate_to_eda args_preview={'instructions': 'Profile dataset_20260525_065746_931632 (incoming_orders_processed) for a demand-forecasting use case. Identify: 1) likely date column(s) and their ranges/granularity; 2) customer/company identifier/name columns; 3) product identifier/name columns; 4) quantity/order amount target ca
+2026-05-25 14:59:12 INFO     [aiml_discovery.agents.scientist] Scientist delegating → EDA Agent
+2026-05-25 14:59:12 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=0 messages=2
+2026-05-25 14:59:13 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 14:59:13 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=profile_dataset args={"dataset_id":"dataset_20260525_065746_931632"}
+2026-05-25 14:59:15 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 14:59:15 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 14:59:15 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 14:59:15 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 14:59:16 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 14:59:16 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 14:59:16 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 14:59:18 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=profile_dataset content_len=5782
+2026-05-25 14:59:18 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=1 messages=4
+2026-05-25 14:59:25 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 14:59:25 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "missing_heatmap"}
+2026-05-25 14:59:25 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='missing_heatmap' params={}
+2026-05-25 14:59:27 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 14:59:27 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 14:59:27 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 14:59:27 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 14:59:27 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 14:59:27 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 14:59:27 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 14:59:27 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='missing_heatmap' params={} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 14:59:28 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='missing_heatmap' title='Missing Heatmap'
+2026-05-25 14:59:31 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=31504 b64_chars=42008
+2026-05-25 14:59:31 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 14:59:31 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 14:59:31 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "histogram", "column": "qty", "bins": 50}
+2026-05-25 14:59:31 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='histogram' — LLM sent ['column', 'bins'] at top level instead of nested under 'params'; promoting.
+2026-05-25 14:59:31 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'qty', 'bins': 50}
+2026-05-25 14:59:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 14:59:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 14:59:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 14:59:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 14:59:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 14:59:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 14:59:33 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 14:59:33 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'qty', 'bins': 50} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 14:59:33 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='histogram' title='Histogram: qty'
+2026-05-25 14:59:36 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=18279 b64_chars=24372
+2026-05-25 14:59:36 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 14:59:36 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 14:59:36 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "bar", "column": "customer_short_name", "top_n": 20}
+2026-05-25 14:59:36 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 14:59:36 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'customer_short_name', 'top_n': 20}
+2026-05-25 14:59:38 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 14:59:38 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 14:59:38 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 14:59:38 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 14:59:38 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 14:59:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 14:59:39 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 14:59:39 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'customer_short_name', 'top_n': 20} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 14:59:39 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: customer_short_name'
+2026-05-25 14:59:41 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=36503 b64_chars=48672
+2026-05-25 14:59:41 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 14:59:42 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 14:59:42 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "bar", "column": "sales_model_code", "top_n": 20}
+2026-05-25 14:59:42 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 14:59:42 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'sales_model_code', 'top_n': 20}
+2026-05-25 14:59:43 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 14:59:43 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 14:59:43 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 14:59:43 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 14:59:43 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 14:59:43 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 14:59:43 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 14:59:44 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'sales_model_code', 'top_n': 20} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 14:59:44 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: sales_model_code'
+2026-05-25 14:59:46 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=47053 b64_chars=62740
+2026-05-25 14:59:46 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 14:59:46 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 14:59:46 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "bar", "column": "order_entry_month", "top_n": 30}
+2026-05-25 14:59:46 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 14:59:46 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'order_entry_month', 'top_n': 30}
+2026-05-25 14:59:47 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 14:59:47 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 14:59:48 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 14:59:48 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 14:59:48 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 14:59:48 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 14:59:48 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 14:59:48 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'order_entry_month', 'top_n': 30} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 14:59:48 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: order_entry_month'
+2026-05-25 14:59:50 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=24406 b64_chars=32544
+2026-05-25 14:59:50 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 14:59:50 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 14:59:50 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "bar", "column": "request_month_corrected", "top_n": 30}
+2026-05-25 14:59:50 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 14:59:50 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'request_month_corrected', 'top_n': 30}
+2026-05-25 14:59:52 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 14:59:52 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 14:59:52 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 14:59:52 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 14:59:52 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 14:59:52 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 14:59:53 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 14:59:53 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'request_month_corrected', 'top_n': 30} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 14:59:53 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: request_month_corrected'
+2026-05-25 14:59:55 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=25220 b64_chars=33628
+2026-05-25 14:59:55 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 14:59:55 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 14:59:55 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "correlation_heatmap"}
+2026-05-25 14:59:55 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='correlation_heatmap' params={}
+2026-05-25 14:59:57 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 14:59:57 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 14:59:57 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 14:59:57 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 14:59:57 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 14:59:57 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 14:59:58 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 14:59:58 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='correlation_heatmap' params={} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 14:59:58 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='correlation_heatmap' title='Correlation Heatmap'
+2026-05-25 15:00:00 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=61296 b64_chars=81728
+2026-05-25 15:00:00 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 15:00:00 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 15:00:00 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=2 messages=12
+2026-05-25 15:00:07 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:00:07 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"Missingness is concentrated in downstream operational fields: `promised_date` (44.6%), `possible_date` (39.3%), `sales_office_code` (7.6%), and derived `customer_salesmodel_salesoffice` (7.6%). These are likely weak or leaky predictors for pure demand forecasting."}
+2026-05-25 15:00:07 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=38
+2026-05-25 15:00:07 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=3 messages=14
+2026-05-25 15:00:11 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:00:11 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"`qty` is heavily right-skewed with extreme high-end outliers; recommend forecasting aggregated monthly quantity at customer-product level, with possible robust scaling / winsorization / log1p sensitivity checks."}
+2026-05-25 15:00:11 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=38
+2026-05-25 15:00:11 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=4 messages=16
+2026-05-25 15:00:16 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:00:16 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"Customer distribution is concentrated in a relatively small head with a long tail; use `customer_cd` as the stable customer identifier and `customer_short_name` for human-readable reporting because there are more codes (1006) than names (731)."}
+2026-05-25 15:00:16 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=38
+2026-05-25 15:00:16 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=5 messages=18
+2026-05-25 15:00:21 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:00:21 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"Product demand is also head-heavy. `sales_model_code` (130 uniques) appears to be a practical product key for modeling—less fragmented than `material_code` (686) while more standardized than free-form part labels."}
+2026-05-25 15:00:21 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=38
+2026-05-25 15:00:21 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=6 messages=20
+2026-05-25 15:00:25 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:00:25 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"Monthly order-entry counts vary materially over time, suggesting trend/seasonality and/or edge effects. Use chronological validation and inspect earliest/latest months for partial-coverage bias."}
+2026-05-25 15:00:25 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=38
+2026-05-25 15:00:25 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=7 messages=22
+2026-05-25 15:00:29 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:00:29 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"`request_month_corrected` extends farther than `order_entry_month` and may be the natural target-month axis for requested demand, but it is potentially future-looking relative to order-entry time. Clarify forecasting origin before using request-based fields as predictors."}
+2026-05-25 15:00:29 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=38
+2026-05-25 15:00:29 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=8 messages=24
+2026-05-25 15:00:34 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:00:34 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"Temporal fields are highly redundant (`request_month`, `request_month_corrected`, `request_month_eom`, plus date variants). Keep one canonical month index and avoid using `months_before`, which likely encodes the lead time between order and request dates."}
+2026-05-25 15:00:34 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=39
+2026-05-25 15:00:34 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=9 messages=26
+2026-05-25 15:00:38 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:00:38 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "scatter", "x_column": "order_entry_month", "y_column": "qty", "color_column": "customer_short_name"}
+2026-05-25 15:00:38 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='scatter' — LLM sent ['x_column', 'y_column', 'color_column'] at top level instead of nested under 'params'; promoting.
+2026-05-25 15:00:38 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='scatter' params={'x_column': 'order_entry_month', 'y_column': 'qty', 'color_column': 'customer_short_name'}
+2026-05-25 15:00:40 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 15:00:40 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 15:00:41 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 15:00:41 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 15:00:41 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 15:00:41 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 15:00:41 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 15:00:41 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='scatter' params={'x_column': 'order_entry_month', 'y_column': 'qty', 'color_column': 'customer_short_name'} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 15:00:41 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='scatter' title='Scatter: order_entry_month vs qty'
+2026-05-25 15:00:45 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=37159 b64_chars=49548
+2026-05-25 15:00:45 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 15:00:45 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 15:00:45 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "scatter", "x_column": "request_month_corrected", "y_column": "qty", "color_column": "sales_model_code"}
+2026-05-25 15:00:45 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='scatter' — LLM sent ['x_column', 'y_column', 'color_column'] at top level instead of nested under 'params'; promoting.
+2026-05-25 15:00:45 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='scatter' params={'x_column': 'request_month_corrected', 'y_column': 'qty', 'color_column': 'sales_model_code'}
+2026-05-25 15:00:47 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 15:00:47 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 15:00:47 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 15:00:47 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 15:00:47 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 15:00:48 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 15:00:48 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 15:00:48 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='scatter' params={'x_column': 'request_month_corrected', 'y_column': 'qty', 'color_column': 'sales_model_code'} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 15:00:48 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='scatter' title='Scatter: request_month_corrected vs qty'
+2026-05-25 15:00:51 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=53117 b64_chars=70824
+2026-05-25 15:00:51 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 15:00:51 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 15:00:51 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "box", "column": "qty", "group_by": "customer_short_name"}
+2026-05-25 15:00:51 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='box' — LLM sent ['column', 'group_by'] at top level instead of nested under 'params'; promoting.
+2026-05-25 15:00:51 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='box' params={'column': 'qty', 'group_by': 'customer_short_name'}
+2026-05-25 15:00:53 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 15:00:53 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 15:00:54 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 15:00:54 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 15:00:54 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 15:00:54 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 15:00:54 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 15:00:55 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='box' params={'column': 'qty', 'group_by': 'customer_short_name'} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 15:00:55 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='box' title='Box: qty by customer_short_name'
+2026-05-25 15:01:01 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=111716 b64_chars=148956
+2026-05-25 15:01:01 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 15:01:02 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 15:01:02 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "box", "column": "qty", "group_by": "sales_model_code"}
+2026-05-25 15:01:02 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='box' — LLM sent ['column', 'group_by'] at top level instead of nested under 'params'; promoting.
+2026-05-25 15:01:02 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='box' params={'column': 'qty', 'group_by': 'sales_model_code'}
+2026-05-25 15:01:05 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 15:01:05 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 15:01:06 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 15:01:06 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 15:01:06 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 15:01:07 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 15:01:07 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 15:01:07 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='box' params={'column': 'qty', 'group_by': 'sales_model_code'} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 15:01:07 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='box' title='Box: qty by sales_model_code'
+2026-05-25 15:01:15 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=92058 b64_chars=122744
+2026-05-25 15:01:15 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 15:01:15 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 15:01:15 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "violin", "column": "qty", "group_by": "part_code"}
+2026-05-25 15:01:15 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='violin' — LLM sent ['column', 'group_by'] at top level instead of nested under 'params'; promoting.
+2026-05-25 15:01:15 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='violin' params={'column': 'qty', 'group_by': 'part_code'}
+2026-05-25 15:01:19 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 15:01:19 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 15:01:19 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 15:01:19 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 15:01:19 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 15:01:19 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 15:01:20 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 15:01:20 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='violin' params={'column': 'qty', 'group_by': 'part_code'} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 15:01:20 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='violin' title='Violin: qty by part_code'
+2026-05-25 15:01:30 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=33022 b64_chars=44032
+2026-05-25 15:01:30 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 15:01:30 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 15:01:30 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_065746_931632", "chart_type": "pairplot", "columns": ["qty", "months_before", "seq", "order_entry_month"], "color_column": "part_code"}
+2026-05-25 15:01:30 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='pairplot' — LLM sent ['columns', 'color_column'] at top level instead of nested under 'params'; promoting.
+2026-05-25 15:01:30 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='pairplot' params={'columns': ['qty', 'months_before', 'seq', 'order_entry_month'], 'color_column': 'part_code'}
+2026-05-25 15:01:35 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 15:01:36 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 15:01:36 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 15:01:36 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 15:01:36 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 15:01:36 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 15:01:37 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 15:01:37 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='pairplot' params={'columns': ['qty', 'months_before', 'seq', 'order_entry_month'], 'color_column': 'part_code'} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 15:01:37 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='pairplot' title='Pairplot (4 cols)'
+2026-05-25 15:01:43 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=70065 b64_chars=93420
+2026-05-25 15:01:43 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 15:01:43 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 15:01:43 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=10 messages=33
+2026-05-25 15:01:50 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:01:50 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"Raw line-item quantities show horizontal banding and extreme spikes across the full timeline, reinforcing that signal should be modeled after customer-product-month aggregation rather than at row level."}
+2026-05-25 15:01:51 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=39
+2026-05-25 15:01:51 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=11 messages=35
+2026-05-25 15:01:56 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:01:56 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"There is no clean row-level relationship between request month and quantity; use a monthly time-series framing per selected customer-product pair instead of row-level regression."}
+2026-05-25 15:01:57 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=39
+2026-05-25 15:01:57 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=12 messages=37
+2026-05-25 15:02:02 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 15:06:58 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:07:08 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:38:50 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:38:53 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:39:11 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:39:14 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:39:37 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:39:41 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:39:50 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:39:53 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:39:55 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:39:59 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:44:58 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:45:02 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:45:10 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:45:14 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:45:19 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:45:23 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:45:28 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:45:31 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 15:45:36 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 15:45:39 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:02:37 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:02:40 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:02:42 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:02:45 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:03:06 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=0 messages=48
+2026-05-25 16:08:54 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=0 messages=2
+2026-05-25 16:08:56 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:08:56 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'business_understanding', 'rationale': "Frame the forecasting problem from the user's goal and define the unit of prediction and success criteria."}
+2026-05-25 16:08:56 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | business_understanding → business_understanding rationale="Frame the forecasting problem from the user's goal and define the unit of prediction and success criteria."
+2026-05-25 16:08:56 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=1 messages=4
+2026-05-25 16:08:59 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:08:59 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=record_observation args_preview={'text': 'Problem framing: create a univariate-or-small-panel forecast for a single customer and single product, predicting order quantity for the latest month and comparing actual vs predicted. Initial working assumption: aggregate orders to monthly quantity by customer-product pair, hold out the l
+2026-05-25 16:08:59 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=2 messages=6
+2026-05-25 16:09:01 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:09:01 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'data_understanding', 'rationale': 'Inspect the dataset to identify customer, product, quantity, and date fields and assess whether monthly aggregation is feasible without user input.'}
+2026-05-25 16:09:01 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | business_understanding → data_understanding rationale='Inspect the dataset to identify customer, product, quantity, and date fields and assess whether monthly aggregation is f'
+2026-05-25 16:09:01 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=3 messages=8
+2026-05-25 16:09:04 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:09:04 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=delegate_to_eda args_preview={'instructions': 'Profile dataset dataset_20260525_080820_019622 (incoming_orders_processed) with the specific goal of building a monthly forecast for one customer-product pair. Identify: (1) likely customer identifier columns, (2) likely product identifier columns, (3) likely order quantity column,
+2026-05-25 16:09:04 INFO     [aiml_discovery.agents.scientist] Scientist delegating → EDA Agent
+2026-05-25 16:09:04 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=0 messages=2
+2026-05-25 16:09:06 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:09:06 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=profile_dataset args={"dataset_id":"dataset_20260525_080820_019622"}
+2026-05-25 16:09:07 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:07 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:07 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:07 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:08 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:08 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:08 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:10 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=profile_dataset content_len=5782
+2026-05-25 16:09:10 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=1 messages=4
+2026-05-25 16:09:12 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:09:12 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "missing_heatmap"}
+2026-05-25 16:09:12 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='missing_heatmap' params={}
+2026-05-25 16:09:14 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:14 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:14 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:14 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:14 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:15 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:15 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:15 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='missing_heatmap' params={} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:09:15 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='missing_heatmap' title='Missing Heatmap'
+2026-05-25 16:09:18 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=31504 b64_chars=42008
+2026-05-25 16:09:18 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:09:18 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:09:18 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "histogram"}
+2026-05-25 16:09:18 WARNING  [aiml_discovery.agents.eda_agent] create_chart | chart_type='histogram' requires params but received none — full args: {'dataset_id': 'dataset_20260525_080820_019622', 'chart_type': 'histogram'}
+2026-05-25 16:09:18 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='histogram' params={}
+2026-05-25 16:09:20 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:20 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:20 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:20 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:20 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:20 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:20 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:20 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='histogram' params={} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:09:20 WARNING  [aiml_discovery.agents.eda_agent] _build_figure | histogram: column=None not in dataset=incoming_orders_processed (available: ['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month'])
+2026-05-25 16:09:20 WARNING  [aiml_discovery.agents.eda_agent] create_chart | FAILED dataset=incoming_orders_processed chart_type='histogram' error="Column 'None' not found."
+2026-05-25 16:09:20 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content_len=37
+2026-05-25 16:09:20 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "bar"}
+2026-05-25 16:09:20 WARNING  [aiml_discovery.agents.eda_agent] create_chart | chart_type='bar' requires params but received none — full args: {'dataset_id': 'dataset_20260525_080820_019622', 'chart_type': 'bar'}
+2026-05-25 16:09:20 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={}
+2026-05-25 16:09:22 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:22 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:22 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:22 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:22 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:23 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:23 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:23 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:09:23 WARNING  [aiml_discovery.agents.eda_agent] _build_figure | bar: column=None not in dataset=incoming_orders_processed
+2026-05-25 16:09:23 WARNING  [aiml_discovery.agents.eda_agent] create_chart | FAILED dataset=incoming_orders_processed chart_type='bar' error="Column 'None' not found."
+2026-05-25 16:09:23 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content_len=37
+2026-05-25 16:09:23 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "correlation_heatmap"}
+2026-05-25 16:09:23 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='correlation_heatmap' params={}
+2026-05-25 16:09:24 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:24 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:24 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:25 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:25 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:25 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:25 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:25 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='correlation_heatmap' params={} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:09:25 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='correlation_heatmap' title='Correlation Heatmap'
+2026-05-25 16:09:28 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=61296 b64_chars=81728
+2026-05-25 16:09:28 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:09:28 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:09:28 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=2 messages=9
+2026-05-25 16:09:37 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:09:37 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "histogram", "column": "qty", "bins": 50}
+2026-05-25 16:09:37 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='histogram' — LLM sent ['column', 'bins'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:09:37 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'qty', 'bins': 50}
+2026-05-25 16:09:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:40 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:40 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:40 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'qty', 'bins': 50} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:09:40 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='histogram' title='Histogram: qty'
+2026-05-25 16:09:43 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=18279 b64_chars=24372
+2026-05-25 16:09:43 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:09:43 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:09:43 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "histogram", "column": "months_before", "bins": 30}
+2026-05-25 16:09:43 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='histogram' — LLM sent ['column', 'bins'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:09:43 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'months_before', 'bins': 30}
+2026-05-25 16:09:44 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:45 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:45 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:45 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:45 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:45 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:45 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:45 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'months_before', 'bins': 30} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:09:45 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='histogram' title='Histogram: months_before'
+2026-05-25 16:09:48 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=18682 b64_chars=24912
+2026-05-25 16:09:48 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:09:48 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:09:48 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "bar", "column": "customer_cd", "top_n": 20}
+2026-05-25 16:09:48 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:09:48 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'customer_cd', 'top_n': 20}
+2026-05-25 16:09:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:51 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:51 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:51 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:51 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'customer_cd', 'top_n': 20} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:09:51 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: customer_cd'
+2026-05-25 16:09:54 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=30096 b64_chars=40128
+2026-05-25 16:09:54 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:09:54 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:09:54 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "bar", "column": "customer_short_name", "top_n": 20}
+2026-05-25 16:09:54 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:09:54 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'customer_short_name', 'top_n': 20}
+2026-05-25 16:09:55 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:09:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:09:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:09:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:09:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:09:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:09:56 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:09:56 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'customer_short_name', 'top_n': 20} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:09:56 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: customer_short_name'
+2026-05-25 16:09:59 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=36503 b64_chars=48672
+2026-05-25 16:09:59 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:09:59 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:09:59 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_080820_019622", "chart_type": "bar", "column": "shimano_part_no", "top_n": 20}
+2026-05-25 16:09:59 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:09:59 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'shimano_part_no', 'top_n': 20}
+2026-05-25 16:10:01 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:10:01 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:10:01 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:10:01 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:10:02 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:10:02 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:10:02 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:10:02 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'shimano_part_no', 'top_n': 20} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:10:02 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: shimano_part_no'
+2026-05-25 16:10:04 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=60620 b64_chars=80828
+2026-05-25 16:10:04 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:25:03 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:34:01 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:34:05 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:34:23 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:34:27 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:34:28 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:34:32 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:41:13 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:41:17 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:41:27 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:41:32 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:42:59 DEBUG    [aiml_discovery] File logging active → C:\Users\SPLSIP266\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-05-25 16:43:03 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-05-25 16:44:06 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=0 messages=24
+2026-05-25 16:45:10 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=0 messages=2
+2026-05-25 16:45:13 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:45:13 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'business_understanding', 'rationale': 'Frame the forecasting task and confirm the unit of prediction from the user-stated goal without asking unnecessary questions.'}
+2026-05-25 16:45:13 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | business_understanding → business_understanding rationale='Frame the forecasting task and confirm the unit of prediction from the user-stated goal without asking unnecessary quest'
+2026-05-25 16:45:13 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=1 messages=4
+2026-05-25 16:45:15 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:45:15 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=record_observation args_preview={'text': 'Problem framing: build a forecasting model to predict monthly quantity for a specific customer-product combination, with emphasis on the latest month and reporting actual vs predicted. Initial assumption: row-level order data will likely need aggregation to a monthly customer-product panel
+2026-05-25 16:45:15 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=2 messages=6
+2026-05-25 16:45:17 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:45:17 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'data_understanding', 'rationale': 'Profile the source dataset to identify the target column, time column, customer/product identifiers, granularity, and leakage risks before preparing a forecasting dataset.'}
+2026-05-25 16:45:17 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | business_understanding → data_understanding rationale='Profile the source dataset to identify the target column, time column, customer/product identifiers, granularity, and le'
+2026-05-25 16:45:17 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=3 messages=8
+2026-05-25 16:45:21 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:45:21 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=delegate_to_eda args_preview={'instructions': 'Analyze dataset id=dataset_20260525_084442_729743 (incoming_orders_processed) for a monthly quantity forecasting use case. Determine: 1) which columns represent quantity, customer, product, and order/request date or month; 2) current grain of the data (row per order line? shipment?
+2026-05-25 16:45:21 INFO     [aiml_discovery.agents.scientist] Scientist delegating → EDA Agent
+2026-05-25 16:45:21 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=0 messages=2
+2026-05-25 16:45:22 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:45:22 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=profile_dataset args={"dataset_id":"dataset_20260525_084442_729743"}
+2026-05-25 16:45:24 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:45:24 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:45:24 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:45:24 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:45:25 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:45:25 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:45:25 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:45:27 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=profile_dataset content_len=5782
+2026-05-25 16:45:27 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4 iteration=1 messages=4
+2026-05-25 16:45:31 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-05-25 16:45:31 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_084442_729743", "chart_type": "missing_heatmap"}
+2026-05-25 16:45:31 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='missing_heatmap' params={}
+2026-05-25 16:45:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:45:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:45:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:45:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:45:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:45:33 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:45:34 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:45:34 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='missing_heatmap' params={} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:45:34 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='missing_heatmap' title='Missing Heatmap'
+2026-05-25 16:45:37 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=31504 b64_chars=42008
+2026-05-25 16:45:37 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:45:37 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:45:37 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_084442_729743", "chart_type": "histogram", "column": "qty", "bins": 50}
+2026-05-25 16:45:37 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='histogram' — LLM sent ['column', 'bins'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:45:37 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'qty', 'bins': 50}
+2026-05-25 16:45:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:45:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:45:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:45:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:45:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:45:39 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:45:39 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:45:39 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'qty', 'bins': 50} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:45:39 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='histogram' title='Histogram: qty'
+2026-05-25 16:45:42 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=18279 b64_chars=24372
+2026-05-25 16:45:42 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:45:42 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:45:42 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_084442_729743", "chart_type": "histogram", "column": "months_before", "bins": 30}
+2026-05-25 16:45:42 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='histogram' — LLM sent ['column', 'bins'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:45:42 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'months_before', 'bins': 30}
+2026-05-25 16:45:44 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:45:44 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:45:44 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:45:44 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:45:45 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:45:45 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:45:45 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:45:45 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='histogram' params={'column': 'months_before', 'bins': 30} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:45:45 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='histogram' title='Histogram: months_before'
+2026-05-25 16:45:48 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=18682 b64_chars=24912
+2026-05-25 16:45:48 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:45:48 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:45:48 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_084442_729743", "chart_type": "bar", "column": "customer_cd", "top_n": 20}
+2026-05-25 16:45:48 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:45:48 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'customer_cd', 'top_n': 20}
+2026-05-25 16:45:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:45:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:45:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:45:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:45:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:45:50 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:45:50 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:45:50 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'customer_cd', 'top_n': 20} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:45:51 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: customer_cd'
+2026-05-25 16:45:54 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=30096 b64_chars=40128
+2026-05-25 16:45:54 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-05-25 16:45:54 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-05-25 16:45:54 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260525_084442_729743", "chart_type": "bar", "column": "shimano_part_no", "top_n": 20}
+2026-05-25 16:45:54 WARNING  [aiml_discovery.agents.eda_agent] create_chart | flat-params detected for chart_type='bar' — LLM sent ['column', 'top_n'] at top level instead of nested under 'params'; promoting.
+2026-05-25 16:45:54 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=incoming_orders_processed chart_type='bar' params={'column': 'shimano_part_no', 'top_n': 20}
+2026-05-25 16:45:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'order_entry_date' coerced to datetime64
+2026-05-25 16:45:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq' coerced to datetime64
+2026-05-25 16:45:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'promised_date' coerced to datetime64
+2026-05-25 16:45:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'possible_date' coerced to datetime64
+2026-05-25 16:45:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_date_seq_corrected' coerced to datetime64
+2026-05-25 16:45:56 INFO     [aiml_discovery.dtype_coercion] dtype_coercion | 'request_month_eom' coerced to datetime64
+2026-05-25 16:45:56 INFO     [aiml_discovery.agents.eda_agent] dtype_coercion | dataset=incoming_orders_processed coerced 6 column(s): {'order_entry_date': 'object → datetime64[ns]', 'request_date_seq': 'object → datetime64[ns]', 'promised_date': 'object → datetime64[ns]', 'possible_date': 'object → datetime64[ns]', 'request_date_seq_corrected': 'object → datetime64[ns]', 'request_month_eom': 'object → datetime64[ns]'}
+2026-05-25 16:45:56 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=incoming_orders_processed chart_type='bar' params={'column': 'shimano_part_no', 'top_n': 20} df_cols=['shimano_order_no', 'customer_cd', 'customer_short_name', 'seq', 'shimano_part_no', 'material_code', 'part_code', 'qty', 'order_entry_date', 'order_entry_month', 'request_date_seq', 'request_month', 'promised_date', 'possible_date', 'sales_office_code', 'sales_model_code', 'request_date_seq_corrected', 'request_month_corrected', 'months_before', 'request_month_eom']
+2026-05-25 16:45:56 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=incoming_orders_processed chart_type='bar' title='Bar: shimano_part_no'
+2026-05-25 16:45:59 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=60620 b64_chars=80828
+2026-05-25 16:45:59 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content

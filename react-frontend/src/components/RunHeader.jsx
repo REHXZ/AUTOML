@@ -1,10 +1,13 @@
-import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import { Loader2, Pause, Play } from "lucide-react";
 
 import { AGENTS } from "../constants";
 import { IconBtn } from "../ui";
 import ViewToggle from "./ViewToggle";
 
-export default function RunHeader({ project, session, datasetSummary, stats, streaming, tweaks, playing, onTogglePlay, onView }) {
+export default function RunHeader({ project, session, datasetSummary, stats, streaming, stopping, tweaks, onPause, onResume, onView }) {
+  const isRunning = session.status === "running";
+  const isPaused = session.status === "idle" && (session.steps?.length ?? 0) > 0;
+
   return (
     <div className="run-header">
       <div className="run-header__top">
@@ -26,23 +29,22 @@ export default function RunHeader({ project, session, datasetSummary, stats, str
             {AGENTS.map((agent) => {
               const count =
                 session.steps?.filter((step) => step.agent === agent.id).length ?? 0;
-              const isRunning =
-                session.status === "running" &&
-                session.steps?.at(-1)?.agent === agent.id;
+              const isAgentRunning =
+                isRunning && session.steps?.at(-1)?.agent === agent.id;
               return (
                 <div key={agent.id} className="run-header__legend-item">
                   <span
-                    className={`agent-dot${isRunning ? " agent-dot--pulse" : ""}`}
+                    className={`agent-dot${isAgentRunning ? " agent-dot--pulse" : ""}`}
                     style={{
                       width: 7,
                       height: 7,
                       background: agent.color,
-                      boxShadow: isRunning ? `0 0 12px ${agent.color}` : "none"
+                      boxShadow: isAgentRunning ? `0 0 12px ${agent.color}` : "none"
                     }}
                   />
                   <span
-                    className={`run-header__legend-name${isRunning ? " is-running" : ""}`}
-                    style={{ color: isRunning ? agent.color : "var(--fg-2)" }}
+                    className={`run-header__legend-name${isAgentRunning ? " is-running" : ""}`}
+                    style={{ color: isAgentRunning ? agent.color : "var(--fg-2)" }}
                   >
                     {agent.title}
                   </span>
@@ -56,23 +58,31 @@ export default function RunHeader({ project, session, datasetSummary, stats, str
         <div style={{ flex: 1 }} />
 
         <div className="run-header__controls">
-          <IconBtn icon={SkipBack} label="Jump to start" size={26} />
-          <IconBtn
-            icon={playing ? Pause : Play}
-            label={playing ? "Pause" : "Play replay"}
-            onClick={onTogglePlay}
-            size={26}
-            active={playing}
-          />
-          <IconBtn icon={SkipForward} label="Jump to now" size={26} />
-          <div style={{ width: 1, height: 16, background: "var(--ink-700)", margin: "0 4px" }} />
-          <span className="run-header__controls-speed">{tweaks.replaySpeed}</span>
+          {isRunning ? (
+            <IconBtn
+              icon={stopping ? Loader2 : Pause}
+              label={stopping ? "Stopping…" : "Pause run"}
+              onClick={stopping ? undefined : onPause}
+              size={26}
+              active={!stopping}
+              style={{ opacity: stopping ? 0.5 : 1, cursor: stopping ? "default" : "pointer" }}
+            />
+          ) : isPaused ? (
+            <IconBtn
+              icon={Play}
+              label="Resume run"
+              onClick={onResume}
+              size={26}
+            />
+          ) : null}
         </div>
 
         <div className="run-header__stats">
           <em>steps</em> <strong>{stats.steps}</strong> <em>done ·</em>{" "}
           <span className="accent">{stats.running}</span> <em>running</em>
           {streaming ? <span className="accent"> · stream</span> : null}
+          {stopping ? <span style={{ color: "var(--fg-2)" }}> · stopping</span> : null}
+          {isPaused ? <span style={{ color: "var(--warning, #f59e0b)" }}> · paused</span> : null}
         </div>
       </div>
     </div>
