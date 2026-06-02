@@ -114,6 +114,10 @@ class AiAutopilot:
         """Persist a session status update for API/background runners."""
         self._session_writer.set_status(status)
 
+    def signal_stop(self) -> None:
+        """Tell all inner LLM loops to exit before starting their next call."""
+        self._ctx.should_stop = True
+
     # ------------------------------------------------------------------
     # Generator surfaces used by app.py
     # ------------------------------------------------------------------
@@ -129,6 +133,7 @@ class AiAutopilot:
         self, user_message: str
     ) -> Generator[AutopilotStep, list[str] | None, None]:
         """Resume the conversation with a new user message after run() finished."""
+        self._ctx.should_stop = False  # clear any previous stop signal
         try:
             yield from self._tee(self._scientist.continue_with(user_message))
         finally:

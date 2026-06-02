@@ -451,6 +451,9 @@ class AimlScientist(BaseAgent):
         tools = _tools()
 
         for iteration in range(60):
+            if self._ctx.should_stop:
+                log.info("Scientist loop stopping | iteration=%d (stop requested)", iteration)
+                break
             log.debug(
                 "Scientist LLM call | iteration=%d messages=%d",
                 iteration, len(messages),

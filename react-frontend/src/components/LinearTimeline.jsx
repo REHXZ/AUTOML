@@ -1,7 +1,7 @@
 import { Check, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
-import { Pill } from "./primitives";
+import { Pill } from "../ui";
 import {
   agentFor,
   clockAt,
@@ -13,7 +13,7 @@ import {
   sessionBaseTimeMs,
   stepStartSecs,
   visibleActivitySteps
-} from "./utils";
+} from "../utils";
 
 export default function LinearTimeline({
   session,

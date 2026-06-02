@@ -2,7 +2,7 @@
 
 Run locally with:
 
-    uvicorn aiml_discovery.api:app --reload
+    python server.py          # uses HOST/PORT env vars, default 0.0.0.0:8082
 
 The API keeps the existing AiAutopilot class as the single execution engine.
 Long-running autopilot sessions run in a background thread and persist their
@@ -20,9 +20,8 @@ from threading import Lock, Thread
 from typing import Any, Generator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status as http_status
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from flask import Flask, Response, abort, jsonify, request, stream_with_context
+from werkzeug.exceptions import HTTPException
 
 from aiml_discovery.ai_autopilot import AiAutopilot, AutopilotStep
 from aiml_discovery.config import APP_NAME
@@ -30,6 +29,7 @@ from aiml_discovery.ingestion import load_dataset, list_sqlite_tables
 from aiml_discovery.logging_setup import configure_logging
 from aiml_discovery.notebook_export import build_notebook, serialize_notebook
 from aiml_discovery.session_store import (
+    SessionWriter,
     delete_session,
     list_sessions,
     load_session,
@@ -42,6 +42,8 @@ load_dotenv()
 configure_logging()
 configure_tracing()
 
+HOST = os.environ.get("API_HOST", "0.0.0.0")
+PORT = int(os.environ.get("API_PORT", 8082))
 
 STATUS_IDLE = "idle"
 STATUS_RUNNING = "running"
@@ -49,47 +51,6 @@ STATUS_WAITING = "waiting_for_input"
 STATUS_COMPLETE = "complete"
 STATUS_ERROR = "error"
 TERMINAL_STATUSES = {STATUS_IDLE, STATUS_COMPLETE, STATUS_ERROR}
-
-
-class CreateProjectRequest(BaseModel):
-    name: str = Field(..., min_length=1)
-    description: str = ""
-
-    class Config:
-        extra = "forbid"
-
-
-class RegisterDatasetRequest(BaseModel):
-    file_path: str = Field(..., min_length=1)
-    name: str | None = None
-    source_name: str | None = None
-    table_name: str | None = None
-
-    class Config:
-        extra = "forbid"
-
-
-class StartAutopilotRequest(BaseModel):
-    user_goal: str = ""
-    api_key: str | None = Field(default=None, repr=False)
-
-    class Config:
-        extra = "forbid"
-
-
-class AnswerAutopilotRequest(BaseModel):
-    answers: list[str] = Field(default_factory=list)
-
-    class Config:
-        extra = "forbid"
-
-
-class FollowUpAutopilotRequest(BaseModel):
-    message: str = Field(..., min_length=1)
-    api_key: str | None = Field(default=None, repr=False)
-
-    class Config:
-        extra = "forbid"
 
 
 @dataclass
@@ -103,84 +64,83 @@ class AutopilotJob:
     error: str | None = None
     worker: Thread | None = None
     lock: Lock = field(default_factory=Lock)
+    should_stop: bool = False
 
 
-app = FastAPI(
-    title=f"{APP_NAME} API",
-    version="0.1.0",
-    description="Local API for AIML Discovery projects, datasets, and AI Autopilot sessions.",
-)
+app = Flask(__name__)
 
 _jobs: dict[tuple[str, str], AutopilotJob] = {}
 _jobs_lock = Lock()
 
 
+@app.errorhandler(HTTPException)
+def _http_error(exc: HTTPException):
+    return jsonify({"detail": exc.description}), exc.code
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
 @app.get("/api/health")
-def health() -> dict[str, Any]:
-    return {
+def health():
+    return jsonify({
         "status": "ok",
         "service": "aiml-discovery-api",
         "openai_configured": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
-    }
+    })
 
 
 @app.get("/api/projects")
-def list_projects_api() -> dict[str, Any]:
+def list_projects_api():
     store = ProjectStore()
-    return {"projects": [_project_payload(project) for project in store.list_projects()]}
+    return jsonify({"projects": [_project_payload(p) for p in store.list_projects()]})
 
 
-@app.post("/api/projects", status_code=http_status.HTTP_201_CREATED)
-def create_project_api(request: CreateProjectRequest) -> dict[str, Any]:
+@app.post("/api/projects")
+def create_project_api():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        abort(400, description="name is required and must be non-empty.")
     store = ProjectStore()
     try:
-        project = store.create_project(request.name, request.description)
+        project = store.create_project(name, body.get("description", ""))
     except ValueError as exc:
-        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return {"project": _project_payload(project)}
+        abort(400, description=str(exc))
+    return jsonify({"project": _project_payload(project)}), 201
 
 
-@app.get("/api/projects/{project_id}")
-def get_project_api(project_id: str) -> dict[str, Any]:
+@app.get("/api/projects/<project_id>")
+def get_project_api(project_id: str):
     store = ProjectStore()
     project = _project_or_404(store, project_id)
-    return {"project": _project_payload(project)}
+    return jsonify({"project": _project_payload(project)})
 
 
-@app.get("/api/projects/{project_id}/datasets")
-def list_datasets_api(project_id: str) -> dict[str, Any]:
+@app.get("/api/projects/<project_id>/datasets")
+def list_datasets_api(project_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
     datasets = store.list_datasets(project_id)
-    return {"project_id": project_id, "datasets": [dataset.to_dict() for dataset in datasets]}
+    return jsonify({"project_id": project_id, "datasets": [d.to_dict() for d in datasets]})
 
 
-@app.post(
-    "/api/projects/{project_id}/datasets/upload",
-    status_code=http_status.HTTP_201_CREATED,
-)
-async def upload_dataset_api(
-    project_id: str,
-    file: UploadFile = File(...),
-    name: str | None = Form(default=None),
-    table_name: str | None = Form(default=None),
-) -> dict[str, Any]:
+@app.post("/api/projects/<project_id>/datasets/upload")
+def upload_dataset_api(project_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
 
+    file = request.files.get("file")
+    if file is None:
+        abort(400, description="Dataset file is required.")
     filename = Path(file.filename or "").name
     if not filename:
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail="Dataset filename is required.",
-        )
-
-    data = await file.read()
+        abort(400, description="Dataset filename is required.")
+    data = file.read()
     if not data:
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail="Dataset file is empty.",
-        )
+        abort(400, description="Dataset file is empty.")
+
+    name = (request.form.get("name") or "").strip() or None
+    table_name = (request.form.get("table_name") or "").strip() or None
 
     saved_path = store.save_dataset_file(project_id, filename, data)
     try:
@@ -188,80 +148,65 @@ async def upload_dataset_api(
             store=store,
             project_id=project_id,
             path=saved_path,
-            name=name.strip() if name and name.strip() else None,
+            name=name,
             source_name=filename,
-            table_name=table_name.strip() if table_name and table_name.strip() else None,
+            table_name=table_name,
         )
-    except HTTPException:
-        saved_path.unlink(missing_ok=True)
-        raise
     except Exception as exc:
         saved_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
+        abort(400, description=str(exc))
 
-    return {"project_id": project_id, "datasets": [dataset.to_dict() for dataset in datasets]}
+    return jsonify({"project_id": project_id, "datasets": [d.to_dict() for d in datasets]}), 201
 
 
-@app.post(
-    "/api/projects/{project_id}/datasets/register",
-    status_code=http_status.HTTP_201_CREATED,
-)
-def register_dataset_api(
-    project_id: str,
-    request: RegisterDatasetRequest,
-) -> dict[str, Any]:
+@app.post("/api/projects/<project_id>/datasets/register")
+def register_dataset_api(project_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
 
-    path = Path(request.file_path).expanduser()
+    body = request.get_json(silent=True) or {}
+    file_path_str = (body.get("file_path") or "").strip()
+    if not file_path_str:
+        abort(400, description="file_path is required.")
+
+    path = Path(file_path_str).expanduser()
     if not path.exists() or not path.is_file():
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail=f"Dataset file not found: {path}",
-        )
+        abort(400, description=f"Dataset file not found: {path}")
 
     datasets = _register_dataset_path(
         store=store,
         project_id=project_id,
         path=path,
-        name=request.name,
-        source_name=request.source_name,
-        table_name=request.table_name,
+        name=body.get("name"),
+        source_name=body.get("source_name"),
+        table_name=body.get("table_name"),
     )
-    return {"project_id": project_id, "datasets": [dataset.to_dict() for dataset in datasets]}
+    return jsonify({"project_id": project_id, "datasets": [d.to_dict() for d in datasets]}), 201
 
 
-@app.get("/api/projects/{project_id}/autopilot/sessions")
-def list_autopilot_sessions_api(project_id: str) -> dict[str, Any]:
+@app.get("/api/projects/<project_id>/autopilot/sessions")
+def list_autopilot_sessions_api(project_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
-    return {
+    return jsonify({
         "project_id": project_id,
-        "sessions": [asdict(record) for record in list_sessions(store, project_id)],
-    }
+        "sessions": [asdict(r) for r in list_sessions(store, project_id)],
+    })
 
 
-@app.post(
-    "/api/projects/{project_id}/autopilot/sessions",
-    status_code=http_status.HTTP_202_ACCEPTED,
-)
-def start_autopilot_session_api(
-    project_id: str,
-    request: StartAutopilotRequest,
-) -> dict[str, Any]:
+@app.post("/api/projects/<project_id>/autopilot/sessions")
+def start_autopilot_session_api(project_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
     _require_datasets(store, project_id)
 
-    api_key = _resolve_api_key(request.api_key)
+    body = request.get_json(silent=True) or {}
+    api_key = _resolve_api_key(body.get("api_key"))
     autopilot = AiAutopilot(
         api_key=api_key,
         project_id=project_id,
         store=store,
-        user_goal=request.user_goal.strip(),
+        user_goal=(body.get("user_goal") or "").strip(),
     )
     job = AutopilotJob(
         project_id=project_id,
@@ -271,119 +216,89 @@ def start_autopilot_session_api(
     )
     _register_job(job)
     _launch_job(job)
+    return jsonify(_job_response(job)), 202
 
-    return _job_response(job)
 
-
-@app.get("/api/projects/{project_id}/autopilot/sessions/{session_id}")
-def get_autopilot_session_api(project_id: str, session_id: str) -> dict[str, Any]:
+@app.get("/api/projects/<project_id>/autopilot/sessions/<session_id>")
+def get_autopilot_session_api(project_id: str, session_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
-    return _session_payload(store, project_id, session_id)
+    return jsonify(_session_payload(store, project_id, session_id))
 
 
-@app.delete(
-    "/api/projects/{project_id}/autopilot/sessions/{session_id}",
-    status_code=http_status.HTTP_204_NO_CONTENT,
-)
-def delete_autopilot_session_api(project_id: str, session_id: str) -> Response:
+@app.delete("/api/projects/<project_id>/autopilot/sessions/<session_id>")
+def delete_autopilot_session_api(project_id: str, session_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
 
     job = _get_job(project_id, session_id)
     if job is not None and job.worker is not None and job.worker.is_alive():
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail="Cannot delete an autopilot session while it is running.",
-        )
+        abort(409, description="Cannot delete an autopilot session while it is running.")
 
     delete_session(store, project_id, session_id)
     _remove_job(project_id, session_id)
-    return Response(status_code=http_status.HTTP_204_NO_CONTENT)
+    return Response("", status=204)
 
 
-@app.get("/api/projects/{project_id}/autopilot/sessions/{session_id}/events")
-def stream_autopilot_events_api(
-    project_id: str,
-    session_id: str,
-    from_index: int = Query(0, ge=0),
-) -> StreamingResponse:
+@app.get("/api/projects/<project_id>/autopilot/sessions/<session_id>/events")
+def stream_autopilot_events_api(project_id: str, session_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
     _load_session_or_404(store, project_id, session_id)
 
-    return StreamingResponse(
-        _event_stream(str(store.root), project_id, session_id, from_index),
-        media_type="text/event-stream",
+    from_index = max(0, request.args.get("from_index", 0, type=int))
+    return Response(
+        stream_with_context(
+            _event_stream(str(store.root), project_id, session_id, from_index)
+        ),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-@app.post(
-    "/api/projects/{project_id}/autopilot/sessions/{session_id}/answers",
-    status_code=http_status.HTTP_202_ACCEPTED,
-)
-def answer_autopilot_questions_api(
-    project_id: str,
-    session_id: str,
-    request: AnswerAutopilotRequest,
-) -> dict[str, Any]:
+@app.post("/api/projects/<project_id>/autopilot/sessions/<session_id>/answers")
+def answer_autopilot_questions_api(project_id: str, session_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
     _load_session_or_404(store, project_id, session_id)
 
     job = _get_job(project_id, session_id)
     if job is None or job.generator is None:
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail=(
-                "This session is not waiting inside the current API process. "
-                "Restart the run or continue from a completed session."
-            ),
-        )
+        abort(409, description=(
+            "This session is not waiting inside the current API process. "
+            "Restart the run or continue from a completed session."
+        ))
     if job.status != STATUS_WAITING:
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail=f"Session is not waiting for answers; current status is {job.status}.",
-        )
+        abort(409, description=f"Session is not waiting for answers; current status is {job.status}.")
 
-    _launch_job(job, answers=request.answers)
-    return _job_response(job)
+    body = request.get_json(silent=True) or {}
+    answers = body.get("answers", [])
+    _launch_job(job, answers=answers)
+    return jsonify(_job_response(job)), 202
 
 
-@app.post(
-    "/api/projects/{project_id}/autopilot/sessions/{session_id}/messages",
-    status_code=http_status.HTTP_202_ACCEPTED,
-)
-def continue_autopilot_session_api(
-    project_id: str,
-    session_id: str,
-    request: FollowUpAutopilotRequest,
-) -> dict[str, Any]:
+@app.post("/api/projects/<project_id>/autopilot/sessions/<session_id>/messages")
+def continue_autopilot_session_api(project_id: str, session_id: str):
     store = ProjectStore()
     _project_or_404(store, project_id)
     loaded = _load_session_or_404(store, project_id, session_id)
 
     job = _get_job(project_id, session_id)
     if job is not None and job.worker is not None and job.worker.is_alive():
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail="Session is already running.",
-        )
+        abort(409, description="Session is already running.")
     if job is not None and job.status == STATUS_WAITING:
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail="Session is waiting for answers. Submit answers before sending a follow-up.",
-        )
-    if job is None and loaded.status in {STATUS_RUNNING, STATUS_WAITING}:
-        raise HTTPException(
-            status_code=http_status.HTTP_409_CONFLICT,
-            detail=(
-                "This saved session is mid-run and cannot be resumed without "
-                "its active API worker."
-            ),
-        )
+        abort(409, description="Session is waiting for answers. Submit answers before sending a follow-up.")
+    if job is None and loaded.status == STATUS_WAITING:
+        abort(409, description="Session is waiting for answers. Submit answers before sending a follow-up.")
+    if job is None and loaded.status == STATUS_RUNNING:
+        _recover_orphaned_session(store, project_id, session_id, loaded)
 
-    api_key = _resolve_api_key(request.api_key)
+    body = request.get_json(silent=True) or {}
+    message = (body.get("message") or "").strip()
+    if not message:
+        abort(400, description="message is required and must be non-empty.")
+
+    api_key = _resolve_api_key(body.get("api_key"))
     if job is None:
         autopilot = AiAutopilot(
             api_key=api_key,
@@ -399,13 +314,40 @@ def continue_autopilot_session_api(
         )
         _register_job(job)
 
-    job.generator = job.autopilot.continue_with(request.message.strip())
+    job.generator = job.autopilot.continue_with(message)
     _launch_job(job)
-    return _job_response(job)
+    return jsonify(_job_response(job)), 202
 
 
-@app.get("/api/projects/{project_id}/autopilot/sessions/{session_id}/notebook")
-def download_autopilot_notebook_api(project_id: str, session_id: str) -> Response:
+@app.post("/api/projects/<project_id>/autopilot/sessions/<session_id>/stop")
+def stop_autopilot_session_api(project_id: str, session_id: str):
+    store = ProjectStore()
+    _project_or_404(store, project_id)
+    job = _get_job(project_id, session_id)
+
+    if job is not None and job.worker is not None and job.worker.is_alive():
+        job.autopilot.signal_stop()
+        with job.lock:
+            job.should_stop = True
+        return jsonify(_job_response(job)), 202
+
+    loaded = _load_session_or_404(store, project_id, session_id)
+    if loaded.status in {STATUS_RUNNING, STATUS_WAITING}:
+        _recover_orphaned_session(store, project_id, session_id, loaded)
+        return jsonify({
+            "project_id": project_id,
+            "session_id": session_id,
+            "status": STATUS_IDLE,
+            "pending_step": None,
+            "error": None,
+            "worker_alive": False,
+        }), 202
+
+    abort(409, description=f"Session is not running (current status: {loaded.status}).")
+
+
+@app.get("/api/projects/<project_id>/autopilot/sessions/<session_id>/notebook")
+def download_autopilot_notebook_api(project_id: str, session_id: str):
     store = ProjectStore()
     project = _project_or_404(store, project_id)
     loaded = _load_session_or_404(store, project_id, session_id)
@@ -413,11 +355,13 @@ def download_autopilot_notebook_api(project_id: str, session_id: str) -> Respons
     data = serialize_notebook(notebook)
     filename = f"{project_id}_{session_id}.ipynb"
     return Response(
-        content=data,
-        media_type="application/x-ipynb+json",
+        data,
+        mimetype="application/x-ipynb+json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _project_payload(project: ProjectInfo) -> dict[str, Any]:
     payload = asdict(project)
@@ -429,37 +373,25 @@ def _project_or_404(store: ProjectStore, project_id: str) -> ProjectInfo:
     try:
         return store.get_project(project_id)
     except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
+        abort(404, description=str(exc))
 
 
 def _load_session_or_404(store: ProjectStore, project_id: str, session_id: str):
     try:
         return load_session(store, project_id, session_id)
     except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
+        abort(404, description=str(exc))
 
 
 def _require_datasets(store: ProjectStore, project_id: str) -> None:
     if not store.list_datasets(project_id):
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail="Upload or register at least one dataset before launching AI Autopilot.",
-        )
+        abort(400, description="Upload or register at least one dataset before launching AI Autopilot.")
 
 
 def _resolve_api_key(api_key: str | None) -> str:
     resolved = (api_key or os.environ.get("OPENAI_API_KEY") or "").strip()
     if not resolved:
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail="OpenAI API key is required. Pass api_key or set OPENAI_API_KEY.",
-        )
+        abort(400, description="OpenAI API key is required. Pass api_key or set OPENAI_API_KEY.")
     return resolved
 
 
@@ -478,10 +410,7 @@ def _register_dataset_path(
     if suffix in {".db", ".sqlite", ".sqlite3"} and table_name is None:
         table_names = list_sqlite_tables(path)
         if not table_names:
-            raise HTTPException(
-                status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail="No tables were found in the SQLite source.",
-            )
+            abort(400, description="No tables were found in the SQLite source.")
     else:
         table_names = [table_name]
 
@@ -489,10 +418,7 @@ def _register_dataset_path(
         try:
             loaded = load_dataset(path, table_name=table)
         except Exception as exc:
-            raise HTTPException(
-                status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            ) from exc
+            abort(400, description=str(exc))
 
         dataset_name = name or loaded.name
         if table is not None and name is None:
@@ -529,30 +455,18 @@ def _get_job(project_id: str, session_id: str) -> AutopilotJob | None:
         return _jobs.get((project_id, session_id))
 
 
-def _launch_job(
-    job: AutopilotJob,
-    answers: list[str] | None = None,
-) -> None:
+def _launch_job(job: AutopilotJob, answers: list[str] | None = None) -> None:
     with job.lock:
         if job.worker is not None and job.worker.is_alive():
-            raise HTTPException(
-                status_code=http_status.HTTP_409_CONFLICT,
-                detail="Session is already running.",
-            )
+            abort(409, description="Session is already running.")
         if job.generator is None:
-            raise HTTPException(
-                status_code=http_status.HTTP_409_CONFLICT,
-                detail="Session has no active generator to run.",
-            )
+            abort(409, description="Session has no active generator to run.")
         job.status = STATUS_RUNNING
         job.pending_step = None
         job.error = None
+        job.should_stop = False
         _mark_autopilot_status(job.autopilot, STATUS_RUNNING)
-        job.worker = Thread(
-            target=_drive_job,
-            args=(job, answers),
-            daemon=True,
-        )
+        job.worker = Thread(target=_drive_job, args=(job, answers), daemon=True)
         job.worker.start()
 
 
@@ -570,6 +484,10 @@ def _drive_job(job: AutopilotJob, answers: list[str] | None) -> None:
                 return
             if _handle_step(job, step):
                 return
+            with job.lock:
+                if job.should_stop:
+                    _finish_job(job, STATUS_IDLE)
+                    return
 
         while True:
             try:
@@ -579,7 +497,11 @@ def _drive_job(job: AutopilotJob, answers: list[str] | None) -> None:
                 return
             if _handle_step(job, step):
                 return
-    except Exception as exc:  # pragma: no cover - defensive runtime boundary
+            with job.lock:
+                if job.should_stop:
+                    _finish_job(job, STATUS_IDLE)
+                    return
+    except Exception as exc:  # defensive runtime boundary
         with job.lock:
             job.status = STATUS_ERROR
             job.error = str(exc)
@@ -590,7 +512,6 @@ def _drive_job(job: AutopilotJob, answers: list[str] | None) -> None:
 def _handle_step(job: AutopilotJob, step: AutopilotStep) -> bool:
     if step.kind != "ask":
         return False
-
     with job.lock:
         job.status = STATUS_WAITING
         job.pending_step = step_to_jsonable(step)
@@ -635,14 +556,29 @@ def _job_response(job: AutopilotJob) -> dict[str, Any]:
         }
 
 
-def _session_payload(
-    store: ProjectStore,
-    project_id: str,
-    session_id: str,
-) -> dict[str, Any]:
+def _recover_orphaned_session(store: ProjectStore, project_id: str, session_id: str, loaded) -> None:
+    """Write STATUS_IDLE to disk for a session whose worker died (e.g. server restart)."""
+    writer = SessionWriter(
+        store=store,
+        project_id=project_id,
+        session_id=session_id,
+        user_goal=loaded.user_goal,
+    )
+    writer.set_status(STATUS_IDLE)
+
+
+def _effective_status(job, loaded) -> str:
+    if job is not None:
+        return job.status
+    if loaded.status in {STATUS_RUNNING, STATUS_WAITING}:
+        return STATUS_IDLE
+    return loaded.status
+
+
+def _session_payload(store: ProjectStore, project_id: str, session_id: str) -> dict[str, Any]:
     loaded = _load_session_or_404(store, project_id, session_id)
     job = _get_job(project_id, session_id)
-    status = job.status if job is not None else loaded.status
+    status = _effective_status(job, loaded)
     pending_step = job.pending_step if job is not None else None
     error = job.error if job is not None else None
 
@@ -663,12 +599,7 @@ def _session_payload(
     }
 
 
-def _event_stream(
-    store_root: str,
-    project_id: str,
-    session_id: str,
-    from_index: int,
-):
+def _event_stream(store_root: str, project_id: str, session_id: str, from_index: int):
     store = ProjectStore(store_root)
     sent_indexes: set[int] = set()
 
@@ -681,9 +612,14 @@ def _event_stream(
             yield _sse("step", step_to_jsonable(step))
 
         job = _get_job(project_id, session_id)
-        status = job.status if job is not None else loaded.status
+        status = _effective_status(job, loaded)
         pending_step = job.pending_step if job is not None else None
         error = job.error if job is not None else None
+
+        if status == STATUS_IDLE and loaded.status in {STATUS_RUNNING, STATUS_WAITING} and job is None:
+            _recover_orphaned_session(store, project_id, session_id, loaded)
+            yield _sse("status", {"status": STATUS_IDLE, "error": None})
+            return
 
         if status == STATUS_WAITING:
             yield _sse("status", {"status": status, "pending_step": pending_step})

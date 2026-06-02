@@ -1,6 +1,5 @@
 streamlit>=1.36
-fastapi>=0.111
-uvicorn[standard]>=0.30
+flask>=3.0
 pandas>=2.2
 scikit-learn>=1.4
 scipy>=1.11
@@ -14,9 +13,7 @@ python-dotenv>=1.0
 nbformat>=5.10
 arize-phoenix-otel>=0.6
 openinference-instrumentation-openai>=0.1
-# Time-series analysis (seasonality, stationarity, ACF/PACF, VIF) and
-# class-imbalance resampling (SMOTE family), plus richer categorical encoders.
-# Agents degrade gracefully with a clear message if these are absent.
+# Time-series analysis, class-imbalance resampling, richer categorical encoders
 statsmodels>=0.14
 imbalanced-learn>=0.12
 category-encoders>=2.6

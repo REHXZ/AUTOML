@@ -26,8 +26,9 @@ def test_api_health_reports_openai_readiness():
 def test_api_exposes_browser_file_upload():
     source = Path("aiml_discovery/api.py").read_text(encoding="utf-8")
 
-    assert "/api/projects/{project_id}/datasets/upload" in source
-    assert "UploadFile" in source
+    # Flask uses <project_id> placeholders; FastAPI used {project_id}.
+    assert "datasets/upload" in source
+    assert "request.files" in source or "UploadFile" in source
 
 
 def test_streamlit_workflow_pages_are_present():

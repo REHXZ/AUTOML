@@ -146,18 +146,20 @@ export function sendFollowUp(projectId, sessionId, message) {
   );
 }
 
+export function stopSession(projectId, sessionId) {
+  return request(
+    `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/stop`,
+    { method: "POST" }
+  );
+}
+
 export function notebookUrl(projectId, sessionId) {
   return apiUrl(
     `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/notebook`
   );
 }
 
-export function connectSessionEvents(
-  projectId,
-  sessionId,
-  fromIndex,
-  handlers
-) {
+export function connectSessionEvents(projectId, sessionId, fromIndex, handlers) {
   const source = new EventSource(
     apiUrl(
       `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/events?from_index=${fromIndex}`

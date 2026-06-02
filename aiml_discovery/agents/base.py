@@ -137,6 +137,9 @@ class AgentContext:
     # via BaseAgent._step() is tagged with this value so the exported notebook
     # can group activity into lifecycle sections.
     current_phase: str = "business_understanding"
+    # Set True by the stop endpoint so loops exit before starting the next
+    # LLM API call instead of waiting for the blocking call to complete.
+    should_stop: bool = False
     _step_counter: int = 0
 
     def next_step_index(self) -> int:
@@ -201,8 +204,8 @@ def build_azure_client(api_key: str):
 def get_deployment() -> str:
     api_base = os.environ.get("OPENAI_API_BASE", "").strip()
     if api_base:
-        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4-mini")
-    return os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
+        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4")
+    return os.environ.get("OPENAI_MODEL", "gpt-5.4")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -282,6 +285,9 @@ class BaseAgent:
         thought_title = thought_title or f"{self.display_name} — Reasoning"
 
         for iteration in range(max_iterations):
+            if self._ctx.should_stop:
+                log.info("LLM loop stopping | agent=%s iteration=%d (stop requested)", self.name, iteration)
+                break
             log.debug(
                 "LLM call | agent=%s model=%s iteration=%d messages=%d",
                 self.name, self._deployment, iteration, len(messages),
