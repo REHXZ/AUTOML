@@ -60,12 +60,6 @@ _FE_PARAM_KEYS = frozenset({
     "contamination",      # isolation_forest_outliers
     "exclude", "exclude_columns",  # scalers / outlier ops
     "n_features",                 # hash_encode
-    # ── NLP / text operations ──
-    "max_features",               # tfidf_vectorize, count_vectorize
-    "ngram_range",                # tfidf_vectorize, count_vectorize
-    "n_components",               # lsa_text (TruncatedSVD)
-    "sublinear_tf",               # tfidf_vectorize
-    "strip_accents",              # text_clean
 })
 # Operations that require params at all — used to escalate the missing-params warning.
 _OPS_REQUIRING_PARAMS = frozenset({
@@ -80,14 +74,120 @@ _OPS_REQUIRING_PARAMS = frozenset({
     "select_from_model", "rfe_select", "smote", "borderline_smote",
     "adasyn", "random_oversample", "random_undersample", "smote_tomek",
     "smote_enn",
-    # NLP / text
-    "text_clean", "text_length_features", "tfidf_vectorize", "count_vectorize", "lsa_text",
 })
 
 
 _SYSTEM_PROMPT = """\
-You are the Feature Engineering Agent — you transform raw datasets into
-modelling-ready ones to maximise downstream signal.
+# Role & Objective
+You are the Feature Engineering Agent — a senior ML engineer specialising
+in feature design, data cleaning, and transformations that maximise
+downstream model signal. You operate on datasets and produce improved ones.
+
+════════════════════════════════════════════════════════════════════════
+# REASONING PROTOCOL — THINK BEFORE EVERY OPERATION
+
+Before each create_derived_dataset call, write a reasoning step:
+  "Current dataset: [id], shape: [N rows × M cols].
+   I will apply [operation] because [evidence: EDA finding, Review critique,
+   or domain knowledge].
+   Expected effect: [specific outcome: cleaner distribution, less leakage,
+   more signal, etc.].
+   Parameters: [key params and why I chose them]."
+
+After creating each dataset, validate by calling inspect_dataset (via the
+Modeling Agent or by reading profile results) and confirm the operation
+had the expected effect. If not, adjust and retry.
+
+════════════════════════════════════════════════════════════════════════
+# OPERATION ORDERING RULES (apply in this sequence)
+
+  1. CLEANING & IMPUTATION (must come first)
+     drop_high_missing → drop_constant → drop_correlated → drop_duplicates
+     → impute_missing (or knn_impute) → add_missing_indicators
+
+  2. OUTLIER HANDLING (before scaling)
+     winsorize → zscore_outlier_removal → isolation_forest_outliers
+
+  3. ENCODING (before scaling, after imputation)
+     datetime_parse → encode_dates → cyclical_encode → one_hot_encode /
+     ordinal_encode / target_encode / hash_encode / frequency_encode
+
+  4. SCALING & TRANSFORMS (after encoding)
+     log_transform / target_log_transform → standard_scale / robust_scale /
+     power_transform / quantile_transform
+
+  5. FEATURE GENERATION (after cleaning and encoding)
+     interaction_features → polynomial_features → groupby_aggregate →
+     create_lag_features → create_rolling_features → create_lead_target
+
+  6. FEATURE SELECTION (last step before modeling)
+     select_k_best → select_from_model → rfe_select → pca
+
+  7. CLASS RESAMPLING (very last — must have NO NaNs, NO raw categoricals)
+     smote / smote_tomek / smote_enn / adasyn / random_oversample
+
+════════════════════════════════════════════════════════════════════════
+# PROBLEM-TYPE PIPELINES
+
+## Classification Pipeline (tabular, imbalanced)
+  1. drop_high_missing (threshold 0.5)
+  2. drop_constant
+  3. impute_missing + add_missing_indicators (for cols with > 5 % missing)
+  4. encode_dates on any datetime columns
+  5. one_hot_encode (cardinality ≤ 20) OR target_encode (cardinality > 20)
+  6. log_transform on right-skewed numeric features (skewness > 1.5)
+  7. standard_scale OR robust_scale (robust if outliers remain)
+  8. [Optional] select_from_model to prune weak features
+  9. smote_tomek (if imbalance > 5:1)
+
+## Regression Pipeline (tabular)
+  1. drop_high_missing (threshold 0.5)
+  2. drop_constant
+  3. impute_missing + add_missing_indicators
+  4. encode_dates on any datetime columns
+  5. one_hot_encode OR target_encode categoricals
+  6. target_log_transform if target skewness > 1.5 (IN PLACE)
+  7. log_transform on right-skewed features
+  8. robust_scale (preferred for regression with outliers)
+  9. [Optional] drop_correlated (threshold 0.9)
+  10. [Optional] select_from_model
+
+## Forecasting Pipeline (time-series)
+  1. groupby_aggregate → aggregate to forecast period (monthly/weekly)
+  2. dense_panel → fill missing (group × time) combinations with fill_value=0
+  3. create_lag_features → lags [1, 2, 3, 6, 12] (for monthly data)
+  4. create_rolling_features → windows [3, 6, 12], agg "mean" and "std"
+  5. encode_dates on the time column
+  6. cyclical_encode month (period=12) and day-of-week (period=7)
+  7. target_encode for high-cardinality group columns
+  8. create_lead_target → leads [1, 3] for short-term and medium-term targets
+  DO NOT apply class resampling or PCA to time-series datasets.
+
+## NLP / Text Pipeline
+  1. text_clean on all text columns (lowercase, strip punctuation)
+  2. text_length_features (adds char_count, word_count features)
+  3. tfidf_vectorize (max_features=100, ngram_range=[1,2]) OR
+     lsa_text (n_components=20, for dense topic features)
+  4. Drop the original text column after vectorization
+
+════════════════════════════════════════════════════════════════════════
+# PARAMETER SELECTION GUIDE
+
+| Operation             | Key Parameter       | Recommended Value                              |
+|-----------------------|---------------------|------------------------------------------------|
+| drop_high_missing     | threshold           | 0.5 (drop if > 50% missing)                   |
+| knn_impute            | n_neighbors         | 5 (default); 3 for small datasets              |
+| one_hot_encode        | (cardinality check) | Use when unique values ≤ 20                    |
+| target_encode         | smoothing           | 10 (default); increase to 20 for small groups |
+| hash_encode           | n_features          | 32-64 for < 1k cats; 128 for > 1k cats        |
+| log_transform         | columns             | Any column with skewness > 1.5                 |
+| robust_scale          | (outliers present?) | Use when outlier rate > 5 %                    |
+| standard_scale        | (no outliers)       | Use when distribution is roughly Gaussian      |
+| create_lag_features   | lags                | [1,2,3,6,12] for monthly; [1,7,14,28] for daily|
+| create_rolling_features| windows            | [3,6,12] for monthly; [7,14,30] for daily      |
+| smote                 | k_neighbors         | 5 (default); 3 if minority class has < 20 rows|
+| select_k_best         | k                   | Start with 20; reduce if still overfitting     |
+| cyclical_encode       | period              | 12 for month, 7 for dow, 24 for hour           |
 
 CRITICAL CALLING CONVENTION
   Every per-operation argument (group_by, aggregations, columns, column,
@@ -217,23 +317,6 @@ Time-series feature engineering (REQUIRED for proper forecasting):
                           target_column="qty_lead_1" using time_column for
                           chronological backtest.
 
-NLP / Text (for string columns):
-  • text_clean          — lowercase + strip punctuation/digits/extra whitespace.
-                          params.columns (list of string cols to clean).
-  • text_length_features— add char_count, word_count, avg_word_len per col.
-                          params.columns.
-  • tfidf_vectorize     — TF-IDF → dense top-k features per text column.
-                          params.column (one col), params.max_features (default 100),
-                          params.ngram_range ([1,1]|[1,2]), params.sublinear_tf (bool).
-                          Replaces the original column with {col}_tfidf_0 … tfidf_N.
-  • count_vectorize     — Bag-of-words count matrix top-k features.
-                          params.column, params.max_features (default 100),
-                          params.ngram_range ([1,1]|[1,2]).
-  • lsa_text            — Latent Semantic Analysis (TF-IDF + TruncatedSVD).
-                          params.column, params.n_components (default 20),
-                          params.max_features (default 5000).
-                          Produces {col}_lsa_0 … lsa_N compact topic features.
-
 Custom code:
   • execute_python — Run arbitrary Python on the dataframe.
                      params.code: Python string. 'df' is the input DataFrame.
@@ -319,9 +402,6 @@ def _tools() -> list[dict]:
                                 "smote", "borderline_smote", "adasyn",
                                 "random_oversample", "random_undersample",
                                 "smote_tomek", "smote_enn",
-                                # ── NLP / text ──
-                                "text_clean", "text_length_features",
-                                "tfidf_vectorize", "count_vectorize", "lsa_text",
                             ],
                         },
                         "params": {"type": "object"},
@@ -1564,120 +1644,6 @@ def _op_hash_encode(df, params):
     return out, f"Hash-encoded {len(cols)} column(s) → {len(added)} features (n_features={n_features})"
 
 
-# ── NLP / Text operations ────────────────────────────────────────────────────
-
-
-def _text_cols(df: pd.DataFrame, params: dict) -> list[str]:
-    requested = params.get("columns") or (
-        [params["column"]] if params.get("column") else []
-    )
-    if requested:
-        return [c for c in requested if c in df.columns]
-    return df.select_dtypes(include="object").columns.tolist()
-
-
-def _op_text_clean(df: pd.DataFrame, params: dict) -> tuple[pd.DataFrame | None, str]:
-    import re as _re
-
-    cols = _text_cols(df, params)
-    if not cols:
-        return None, "No text columns found. Specify params.columns."
-    out = df.copy()
-    for c in cols:
-        out[c] = (
-            out[c]
-            .astype(str)
-            .str.lower()
-            .str.replace(r"[^a-z0-9\s]", " ", regex=True)
-            .str.replace(r"\s+", " ", regex=True)
-            .str.strip()
-        )
-    return out, f"Cleaned {len(cols)} text column(s): lowercased, stripped punctuation/digits"
-
-
-def _op_text_length_features(df: pd.DataFrame, params: dict) -> tuple[pd.DataFrame | None, str]:
-    cols = _text_cols(df, params)
-    if not cols:
-        return None, "No text columns found. Specify params.columns."
-    out = df.copy()
-    added = []
-    for c in cols:
-        series = out[c].astype(str)
-        out[f"{c}_char_count"] = series.str.len()
-        out[f"{c}_word_count"] = series.str.split().str.len()
-        out[f"{c}_avg_word_len"] = series.apply(
-            lambda t: np.mean([len(w) for w in t.split()]) if t.split() else 0.0
-        )
-        added += [f"{c}_char_count", f"{c}_word_count", f"{c}_avg_word_len"]
-    return out, f"Added {len(added)} text-length feature(s) for {cols}"
-
-
-def _op_tfidf_vectorize(df: pd.DataFrame, params: dict) -> tuple[pd.DataFrame | None, str]:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-
-    col = params.get("column")
-    if not col or col not in df.columns:
-        return None, f"params.column required and must exist. Available: {list(df.columns)[:20]}"
-    max_features = int(params.get("max_features", 100))
-    ngram_raw = params.get("ngram_range", [1, 1])
-    ngram_range = tuple(ngram_raw) if isinstance(ngram_raw, list) else (1, 1)
-    sublinear_tf = bool(params.get("sublinear_tf", True))
-
-    corpus = df[col].fillna("").astype(str).tolist()
-    vec = TfidfVectorizer(
-        max_features=max_features,
-        ngram_range=ngram_range,
-        sublinear_tf=sublinear_tf,
-    )
-    matrix = vec.fit_transform(corpus)
-    feature_names = [f"{col}_tfidf_{i}" for i in range(matrix.shape[1])]
-    dense_df = pd.DataFrame(matrix.toarray(), columns=feature_names, index=df.index)
-    out = pd.concat([df.drop(columns=[col]), dense_df], axis=1)
-    return out, f"TF-IDF '{col}': {matrix.shape[1]} features (max_features={max_features}, ngram={ngram_range})"
-
-
-def _op_count_vectorize(df: pd.DataFrame, params: dict) -> tuple[pd.DataFrame | None, str]:
-    from sklearn.feature_extraction.text import CountVectorizer
-
-    col = params.get("column")
-    if not col or col not in df.columns:
-        return None, f"params.column required and must exist. Available: {list(df.columns)[:20]}"
-    max_features = int(params.get("max_features", 100))
-    ngram_raw = params.get("ngram_range", [1, 1])
-    ngram_range = tuple(ngram_raw) if isinstance(ngram_raw, list) else (1, 1)
-
-    corpus = df[col].fillna("").astype(str).tolist()
-    vec = CountVectorizer(max_features=max_features, ngram_range=ngram_range)
-    matrix = vec.fit_transform(corpus)
-    feature_names = [f"{col}_bow_{i}" for i in range(matrix.shape[1])]
-    dense_df = pd.DataFrame(matrix.toarray(), columns=feature_names, index=df.index)
-    out = pd.concat([df.drop(columns=[col]), dense_df], axis=1)
-    return out, f"Bag-of-words '{col}': {matrix.shape[1]} features (max_features={max_features}, ngram={ngram_range})"
-
-
-def _op_lsa_text(df: pd.DataFrame, params: dict) -> tuple[pd.DataFrame | None, str]:
-    from sklearn.decomposition import TruncatedSVD
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.pipeline import Pipeline as _Pipeline
-
-    col = params.get("column")
-    if not col or col not in df.columns:
-        return None, f"params.column required and must exist. Available: {list(df.columns)[:20]}"
-    n_components = int(params.get("n_components", 20))
-    max_features = int(params.get("max_features", 5000))
-
-    corpus = df[col].fillna("").astype(str).tolist()
-    pipe = _Pipeline([
-        ("tfidf", TfidfVectorizer(max_features=max_features, sublinear_tf=True)),
-        ("svd", TruncatedSVD(n_components=n_components, random_state=42)),
-    ])
-    lsa_matrix = pipe.fit_transform(corpus)
-    feature_names = [f"{col}_lsa_{i}" for i in range(lsa_matrix.shape[1])]
-    lsa_df = pd.DataFrame(lsa_matrix, columns=feature_names, index=df.index)
-    out = pd.concat([df.drop(columns=[col]), lsa_df], axis=1)
-    return out, f"LSA '{col}': {lsa_matrix.shape[1]} topic features (max_features={max_features})"
-
-
 # ── Registry: operation name → handler ───────────────────────────────────────
 
 _NEW_OPERATIONS: dict[str, Any] = {
@@ -1723,10 +1689,4 @@ _NEW_OPERATIONS: dict[str, Any] = {
     "random_undersample": _op_random_undersample,
     "smote_tomek": _op_smote_tomek,
     "smote_enn": _op_smote_enn,
-    # NLP / text
-    "text_clean": _op_text_clean,
-    "text_length_features": _op_text_length_features,
-    "tfidf_vectorize": _op_tfidf_vectorize,
-    "count_vectorize": _op_count_vectorize,
-    "lsa_text": _op_lsa_text,
 }
