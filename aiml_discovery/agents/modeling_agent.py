@@ -477,6 +477,135 @@ def _tools() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "train_arima",
+                "description": (
+                    "Fit an ARIMA or SARIMA model to a univariate time series. "
+                    "Automatically selects the best (p,d,q) order via AIC grid search "
+                    "(uses pmdarima if installed, otherwise statsmodels ARIMA). "
+                    "Returns model fit metrics and in-sample residual stats. "
+                    "Use train_model with time_column for multi-feature forecasting; "
+                    "use train_arima for pure univariate TS benchmarks."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_id": {"type": "string"},
+                        "target_column": {
+                            "type": "string",
+                            "description": "The univariate series to model.",
+                        },
+                        "time_column": {
+                            "type": "string",
+                            "description": "Optional column to sort by before fitting.",
+                        },
+                        "seasonal": {
+                            "type": "boolean",
+                            "description": "If true, fit SARIMA with seasonal period m. Default false.",
+                        },
+                        "m": {
+                            "type": "integer",
+                            "description": "Seasonal period (e.g. 12 for monthly, 7 for daily). Default 12.",
+                        },
+                        "max_p": {"type": "integer", "description": "Max AR order. Default 3."},
+                        "max_q": {"type": "integer", "description": "Max MA order. Default 3."},
+                        "max_d": {"type": "integer", "description": "Max integration order. Default 2."},
+                    },
+                    "required": ["dataset_id", "target_column"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "arima_forecast",
+                "description": (
+                    "Produce n-step-ahead out-of-sample forecasts from a previously fitted ARIMA model. "
+                    "Returns point forecasts and 95% confidence bands."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "arima_run_id": {
+                            "type": "string",
+                            "description": "The run_id returned by train_arima.",
+                        },
+                        "steps": {
+                            "type": "integer",
+                            "description": "Number of periods to forecast ahead. Default 12.",
+                        },
+                    },
+                    "required": ["arima_run_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "explain_model",
+                "description": (
+                    "Compute SHAP Shapley values for a saved run and return a feature-importance "
+                    "summary plot (base64 PNG) plus a table of mean |SHAP| per feature. "
+                    "Works with tree-based models (TreeExplainer, fast) and linear models "
+                    "(LinearExplainer). Falls back to KernelExplainer for others (slow — "
+                    "use a small sample_size). "
+                    "Requires: pip install shap"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "run_id": {"type": "string"},
+                        "sample_size": {
+                            "type": "integer",
+                            "description": "Rows to explain (default 200, max 1000). Larger → slower.",
+                        },
+                        "top_n": {
+                            "type": "integer",
+                            "description": "Top-N features to show in the summary (default 15).",
+                        },
+                    },
+                    "required": ["run_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "tune_hyperparameters_optuna",
+                "description": (
+                    "Bayesian hyperparameter optimisation via Optuna. Significantly more efficient "
+                    "than random search when n_trials is limited. "
+                    "Falls back to tune_hyperparameters (RandomizedSearchCV) if optuna is not installed. "
+                    "Returns best params and their cross-validated score."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_id": {"type": "string"},
+                        "target_column": {"type": "string"},
+                        "model_name": {
+                            "type": "string",
+                            "description": "Name of the model to tune (e.g. 'Random Forest', 'XGBoost').",
+                        },
+                        "n_trials": {
+                            "type": "integer",
+                            "description": "Number of Optuna trials (default 30).",
+                        },
+                        "n_splits": {
+                            "type": "integer",
+                            "description": "CV folds (default 3).",
+                        },
+                        "time_column": {
+                            "type": "string",
+                            "description": "If set, uses TimeSeriesSplit.",
+                        },
+                    },
+                    "required": ["dataset_id", "target_column", "model_name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "done",
                 "description": "Finish modeling. Report the runs you executed.",
                 "parameters": {
@@ -652,6 +781,14 @@ class ModelingAgent(BaseAgent):
             return self._cross_validate(args)
         if name == "tune_hyperparameters":
             return self._tune(args)
+        if name == "train_arima":
+            return self._train_arima(args)
+        if name == "arima_forecast":
+            return self._arima_forecast(args)
+        if name == "explain_model":
+            return self._explain_model(args)
+        if name == "tune_hyperparameters_optuna":
+            return self._tune_optuna(args)
         if name == "done":
             self._summary = to_json_safe(args)
             return json.dumps({"status": "noted"}), None, True
@@ -1078,6 +1215,420 @@ class ModelingAgent(BaseAgent):
             if r.get("run_id") == run_id:
                 return r
         return None
+
+    # ------------------------------------------------------------------
+    # ARIMA / SARIMA
+    # ------------------------------------------------------------------
+
+    # Stores fitted ARIMA models by run_id so arima_forecast can retrieve them.
+    _arima_cache: dict[str, Any] = {}
+
+    def _train_arima(self, args: dict) -> tuple[str, Any, bool]:
+        ds = self._ctx.find_dataset(args.get("dataset_id", ""))
+        if ds is None:
+            return json.dumps({"error": f"Dataset '{args.get('dataset_id')}' not found."}), None, False
+
+        target = args.get("target_column", "")
+        time_col = args.get("time_column") or None
+        seasonal = bool(args.get("seasonal", False))
+        m = int(args.get("m", 12))
+        max_p = int(args.get("max_p", 3))
+        max_q = int(args.get("max_q", 3))
+        max_d = int(args.get("max_d", 2))
+
+        loaded = load_dataset(ds.file_path, ds.table_name)
+        df = loaded.dataframe.copy()
+        if target not in df.columns:
+            return json.dumps({"error": f"Column '{target}' not found."}), None, False
+        if time_col and time_col in df.columns:
+            df = df.sort_values(time_col)
+        series = df[target].dropna()
+        if len(series) < 8:
+            return json.dumps({"error": "Need ≥8 observations for ARIMA."}), None, False
+
+        # Try pmdarima (auto_arima) first; fall back to statsmodels grid search
+        fitted_model = None
+        order = None
+        seasonal_order = None
+        aic = None
+        try:
+            import pmdarima as pm
+            auto = pm.auto_arima(
+                series,
+                start_p=0, max_p=max_p,
+                start_q=0, max_q=max_q,
+                d=None, max_d=max_d,
+                seasonal=seasonal, m=m,
+                information_criterion="aic",
+                suppress_warnings=True, error_action="ignore",
+            )
+            fitted_model = auto
+            order = auto.order
+            seasonal_order = auto.seasonal_order if seasonal else None
+            aic = float(auto.aic())
+            log.info("train_arima | pmdarima auto_arima | order=%s seasonal=%s aic=%.2f", order, seasonal_order, aic)
+        except ImportError:
+            # Fallback: statsmodels ARIMA grid search
+            try:
+                from statsmodels.tsa.arima.model import ARIMA as _ARIMA
+                import itertools
+                best_aic = float("inf")
+                best_order = (1, 1, 1)
+                for p, d, q in itertools.product(range(max_p + 1), range(max_d + 1), range(max_q + 1)):
+                    if p + d + q == 0:
+                        continue
+                    try:
+                        m_fit = _ARIMA(series, order=(p, d, q)).fit()
+                        if m_fit.aic < best_aic:
+                            best_aic = m_fit.aic
+                            best_order = (p, d, q)
+                            fitted_model = m_fit
+                    except Exception:
+                        continue
+                order = best_order
+                aic = best_aic
+                log.info("train_arima | statsmodels grid | best_order=%s aic=%.2f", order, aic)
+            except Exception as exc:
+                return json.dumps({"error": f"ARIMA fitting failed: {exc}"}), None, False
+        except Exception as exc:
+            return json.dumps({"error": f"ARIMA fitting failed: {exc}"}), None, False
+
+        if fitted_model is None:
+            return json.dumps({"error": "Could not fit any ARIMA model."}), None, False
+
+        import numpy as np
+        try:
+            if hasattr(fitted_model, "resid"):
+                resid = np.array(fitted_model.resid()).flatten() if callable(fitted_model.resid) else np.array(fitted_model.resid).flatten()
+            else:
+                resid = np.array([])
+        except Exception:
+            resid = np.array([])
+
+        import datetime
+        run_id = f"arima_{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        ModelingAgent._arima_cache[run_id] = {
+            "model": fitted_model,
+            "series": series,
+            "target": target,
+        }
+        self._run_ids.append(run_id)
+
+        rmse = float(np.sqrt(np.mean(resid ** 2))) if len(resid) > 0 else None
+        result = {
+            "run_id": run_id,
+            "model_type": "SARIMA" if seasonal else "ARIMA",
+            "target_column": target,
+            "order": list(order),
+            "seasonal_order": list(seasonal_order) if seasonal_order else None,
+            "aic": round(aic, 4) if aic else None,
+            "in_sample_rmse": round(rmse, 4) if rmse else None,
+            "n_obs": int(len(series)),
+        }
+        log.info("train_arima | OK run_id=%s order=%s aic=%.4f", run_id, order, aic or 0)
+        step = self._step(
+            "training",
+            f"ARIMA: {target} order={order}",
+            f"AIC={aic:.2f} | in-sample RMSE={rmse:.4f}" if rmse else f"AIC={aic:.2f}",
+            data=to_json_safe(result),
+        )
+        return json.dumps(to_json_safe(result)), step, False
+
+    def _arima_forecast(self, args: dict) -> tuple[str, Any, bool]:
+        arima_run_id = args.get("arima_run_id", "")
+        steps = int(args.get("steps", 12))
+        cached = ModelingAgent._arima_cache.get(arima_run_id)
+        if cached is None:
+            return json.dumps({"error": f"ARIMA run '{arima_run_id}' not found. Call train_arima first."}), None, False
+
+        fitted_model = cached["model"]
+        target = cached["target"]
+        try:
+            if hasattr(fitted_model, "predict"):
+                # pmdarima-style
+                try:
+                    fc, conf_int = fitted_model.predict(n_periods=steps, return_conf_int=True, alpha=0.05)
+                    lower = conf_int[:, 0].tolist()
+                    upper = conf_int[:, 1].tolist()
+                    fc_list = fc.tolist()
+                except TypeError:
+                    fc_res = fitted_model.get_forecast(steps=steps)
+                    fc_list = fc_res.predicted_mean.tolist()
+                    ci = fc_res.conf_int(alpha=0.05)
+                    lower = ci.iloc[:, 0].tolist()
+                    upper = ci.iloc[:, 1].tolist()
+            else:
+                fc_res = fitted_model.get_forecast(steps=steps)
+                fc_list = fc_res.predicted_mean.tolist()
+                ci = fc_res.conf_int(alpha=0.05)
+                lower = ci.iloc[:, 0].tolist()
+                upper = ci.iloc[:, 1].tolist()
+        except Exception as exc:
+            return json.dumps({"error": f"Forecast failed: {exc}"}), None, False
+
+        import plotly.graph_objects as _go
+        series = cached["series"]
+        x_hist = list(range(len(series)))
+        x_fc = list(range(len(series), len(series) + steps))
+        fig = _go.Figure()
+        fig.add_trace(_go.Scatter(x=x_hist, y=series.values.tolist(), mode="lines", name="Historical"))
+        fig.add_trace(_go.Scatter(x=x_fc, y=fc_list, mode="lines", name="Forecast", line=dict(dash="dash")))
+        fig.add_trace(_go.Scatter(
+            x=x_fc + x_fc[::-1],
+            y=upper + lower[::-1],
+            fill="toself", fillcolor="rgba(0,100,255,0.15)",
+            line=dict(color="rgba(255,255,255,0)"), name="95% CI",
+        ))
+        fig.update_layout(title=f"ARIMA Forecast: {target} ({steps} steps)", template="plotly_white")
+
+        result = {
+            "arima_run_id": arima_run_id,
+            "target_column": target,
+            "steps": steps,
+            "forecast": [round(v, 4) for v in fc_list],
+            "lower_95": [round(v, 4) for v in lower],
+            "upper_95": [round(v, 4) for v in upper],
+        }
+        step = self._step(
+            "chart",
+            f"ARIMA Forecast: {target} ({steps} steps)",
+            f"Point forecasts with 95% confidence bands",
+            data={"figure": fig, **to_json_safe(result)},
+        )
+        return vision_tool_content(json.dumps(to_json_safe(result)), fig), step, False
+
+    # ------------------------------------------------------------------
+    # SHAP Explainability
+    # ------------------------------------------------------------------
+
+    def _explain_model(self, args: dict) -> tuple[str | list, Any, bool]:
+        run_id = args.get("run_id", "")
+        sample_size = min(int(args.get("sample_size", 200)), 1000)
+        top_n = int(args.get("top_n", 15))
+
+        run = self._find_run(run_id)
+        if run is None:
+            return json.dumps({"error": f"Run '{run_id}' not found."}), None, False
+        model_path = run.get("model_path")
+        if not model_path:
+            return json.dumps({"error": "Run has no saved model_path."}), None, False
+
+        ds_info = self._ctx.find_dataset(run.get("dataset_id", ""))
+        if ds_info is None:
+            ds_id = run.get("dataset", {}).get("id", "")
+            ds_info = self._ctx.find_dataset(ds_id)
+        if ds_info is None:
+            return json.dumps({"error": "Could not locate the original dataset for this run."}), None, False
+
+        target = run.get("target_column", "")
+        time_col = run.get("time_column") or run.get("settings", {}).get("time_column")
+
+        try:
+            import shap
+        except ImportError:
+            return json.dumps({
+                "error": "SHAP is not installed. Run: pip install shap"
+            }), None, False
+
+        import joblib
+        import numpy as np
+
+        try:
+            pipeline = joblib.load(model_path)
+        except Exception as exc:
+            return json.dumps({"error": f"Could not load model: {exc}"}), None, False
+
+        loaded = load_dataset(ds_info.file_path, ds_info.table_name)
+        df = loaded.dataframe.copy()
+        feature_cols = [c for c in df.columns if c != target and c != time_col]
+        X = df[feature_cols].head(sample_size)
+
+        try:
+            preprocessor = pipeline.named_steps.get("preprocessor")
+            model_step = pipeline.named_steps.get("model")
+            if preprocessor is not None and model_step is not None:
+                X_transformed = preprocessor.transform(X)
+                explainer_target = model_step
+            else:
+                X_transformed = X
+                explainer_target = pipeline
+
+            model_type = type(model_step or explainer_target).__name__
+            tree_types = {"RandomForestClassifier", "RandomForestRegressor",
+                          "ExtraTreesClassifier", "ExtraTreesRegressor",
+                          "GradientBoostingClassifier", "GradientBoostingRegressor",
+                          "HistGradientBoostingClassifier", "HistGradientBoostingRegressor",
+                          "DecisionTreeClassifier", "DecisionTreeRegressor",
+                          "XGBClassifier", "XGBRegressor",
+                          "LGBMClassifier", "LGBMRegressor",
+                          "CatBoostClassifier", "CatBoostRegressor"}
+            linear_types = {"LogisticRegression", "LinearRegression", "Ridge", "Lasso",
+                             "ElasticNet", "SGDClassifier", "SGDRegressor", "LinearSVC", "LinearSVR"}
+
+            if model_type in tree_types:
+                explainer = shap.TreeExplainer(explainer_target)
+                shap_values = explainer.shap_values(X_transformed)
+            elif model_type in linear_types:
+                explainer = shap.LinearExplainer(explainer_target, X_transformed)
+                shap_values = explainer.shap_values(X_transformed)
+            else:
+                bg = shap.sample(X_transformed, min(50, len(X_transformed)))
+                explainer = shap.KernelExplainer(explainer_target.predict, bg)
+                shap_values = explainer.shap_values(X_transformed, nsamples=50)
+
+            if isinstance(shap_values, list):
+                sv = np.abs(shap_values[1]) if len(shap_values) > 1 else np.abs(shap_values[0])
+            else:
+                sv = np.abs(shap_values)
+
+            if preprocessor is not None:
+                try:
+                    feature_names = preprocessor.get_feature_names_out().tolist()
+                except Exception:
+                    feature_names = [f"f{i}" for i in range(sv.shape[1])]
+            else:
+                feature_names = feature_cols
+
+            mean_abs = sv.mean(axis=0)
+            ranked = sorted(zip(feature_names, mean_abs.tolist()), key=lambda x: x[1], reverse=True)[:top_n]
+        except Exception as exc:
+            return json.dumps({"error": f"SHAP computation failed: {exc}"}), None, False
+
+        import plotly.graph_objects as _go
+        feat_names = [r[0] for r in ranked]
+        feat_vals = [round(r[1], 4) for r in ranked]
+        fig = _go.Figure(_go.Bar(
+            x=feat_vals[::-1], y=feat_names[::-1], orientation="h",
+            marker_color="steelblue",
+        ))
+        fig.update_layout(
+            title=f"SHAP Feature Importance — {run_id} (top {top_n})",
+            xaxis_title="Mean |SHAP value|",
+            template="plotly_white",
+        )
+
+        result = {
+            "run_id": run_id,
+            "model_type": model_type,
+            "sample_size": sample_size,
+            "top_features": [{"feature": n, "mean_abs_shap": v} for n, v in ranked],
+        }
+        step = self._step(
+            "chart",
+            f"SHAP Importance — {run_id}",
+            f"Top {top_n} features by mean |SHAP| ({model_type})",
+            data={"figure": fig, **to_json_safe(result)},
+        )
+        return vision_tool_content(json.dumps(to_json_safe(result)), fig), step, False
+
+    # ------------------------------------------------------------------
+    # Bayesian HPO via Optuna
+    # ------------------------------------------------------------------
+
+    def _tune_optuna(self, args: dict) -> tuple[str, Any, bool]:
+        ds = self._ctx.find_dataset(args.get("dataset_id", ""))
+        if ds is None:
+            return json.dumps({"error": f"Dataset '{args.get('dataset_id')}' not found."}), None, False
+        target = args.get("target_column", "")
+        model_name = args.get("model_name", "")
+        n_trials = int(args.get("n_trials") or 30)
+        n_splits = int(args.get("n_splits") or 3)
+        time_column = args.get("time_column") or None
+
+        try:
+            import optuna
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+        except ImportError:
+            log.info("Optuna not installed — falling back to RandomizedSearchCV")
+            fallback_args = dict(args)
+            fallback_args["n_iter"] = n_trials
+            result_str, step, term = self._tune(fallback_args)
+            result = json.loads(result_str)
+            result["note"] = "optuna not installed; used RandomizedSearchCV fallback"
+            return json.dumps(to_json_safe(result)), step, term
+
+        from ..ingestion import load_dataset as _ld
+        from ..training import _candidate_models, build_preprocessor, infer_task_type, CLASSIFICATION
+        from sklearn.model_selection import cross_val_score, TimeSeriesSplit, KFold
+        from sklearn.pipeline import Pipeline
+
+        loaded = _ld(ds.file_path, ds.table_name)
+        df = loaded.dataframe.dropna(subset=[target])
+        if target not in df.columns:
+            return json.dumps({"error": f"Target '{target}' not found."}), None, False
+
+        feature_cols = [c for c in df.columns if c != target and c != time_column]
+        X = df[feature_cols].fillna(df[feature_cols].select_dtypes("number").median())
+        y = df[target]
+        task = infer_task_type(y)
+        scoring = "f1_weighted" if task == CLASSIFICATION else "r2"
+        cv = (TimeSeriesSplit(n_splits=n_splits) if time_column
+              else KFold(n_splits=n_splits, shuffle=True, random_state=42))
+
+        candidates = _candidate_models(task, 42, 1)
+        if model_name not in candidates:
+            return json.dumps({"error": f"Model '{model_name}' not found. Available: {list(candidates.keys())}"}), None, False
+
+        _OPTUNA_SPACES: dict[str, Any] = {
+            "Random Forest": lambda t: {"model__n_estimators": t.suggest_int("n_est", 50, 400), "model__max_depth": t.suggest_categorical("max_d", [None, 5, 10, 20]), "model__min_samples_leaf": t.suggest_int("msl", 1, 10)},
+            "Extra Trees": lambda t: {"model__n_estimators": t.suggest_int("n_est", 50, 400), "model__max_depth": t.suggest_categorical("max_d", [None, 5, 10, 20])},
+            "Gradient Boosting": lambda t: {"model__n_estimators": t.suggest_int("n_est", 50, 400), "model__learning_rate": t.suggest_float("lr", 0.01, 0.3, log=True), "model__max_depth": t.suggest_int("max_d", 2, 8)},
+            "Hist Gradient Boosting": lambda t: {"model__max_iter": t.suggest_int("n_est", 50, 400), "model__learning_rate": t.suggest_float("lr", 0.01, 0.3, log=True)},
+            "XGBoost": lambda t: {"model__n_estimators": t.suggest_int("n_est", 50, 400), "model__learning_rate": t.suggest_float("lr", 0.01, 0.3, log=True), "model__max_depth": t.suggest_int("max_d", 2, 8), "model__subsample": t.suggest_float("ss", 0.5, 1.0)},
+            "LightGBM": lambda t: {"model__n_estimators": t.suggest_int("n_est", 50, 400), "model__learning_rate": t.suggest_float("lr", 0.01, 0.3, log=True), "model__num_leaves": t.suggest_int("nl", 10, 100)},
+            "Ridge": lambda t: {"model__alpha": t.suggest_float("alpha", 0.001, 100.0, log=True)},
+            "Lasso": lambda t: {"model__alpha": t.suggest_float("alpha", 0.001, 10.0, log=True)},
+            "Logistic Regression": lambda t: {"model__C": t.suggest_float("C", 0.001, 100.0, log=True)},
+            "K-Nearest Neighbors": lambda t: {"model__n_neighbors": t.suggest_int("k", 2, 20)},
+        }
+
+        suggest_fn = _OPTUNA_SPACES.get(model_name)
+        if suggest_fn is None:
+            log.info("tune_optuna | no Optuna space for %s — falling back to RandomizedSearchCV", model_name)
+            fallback_args = dict(args)
+            fallback_args["n_iter"] = n_trials
+            result_str, step, term = self._tune(fallback_args)
+            result = json.loads(result_str)
+            result["note"] = f"No Optuna space defined for '{model_name}'; used RandomizedSearchCV."
+            return json.dumps(to_json_safe(result)), step, term
+
+        preprocessor = build_preprocessor(X)
+
+        def objective(trial):
+            params = suggest_fn(trial)
+            pipe = Pipeline([
+                ("preprocessor", preprocessor),
+                ("model", candidates[model_name]),
+            ])
+            pipe.set_params(**params)
+            scores = cross_val_score(pipe, X, y, cv=cv, scoring=scoring, n_jobs=-1)
+            return float(scores.mean())
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+
+        best_params = study.best_params
+        best_score = round(study.best_value, 4)
+        log.info("tune_optuna | model=%s best_%s=%.4f params=%s", model_name, scoring, best_score, best_params)
+        result = {
+            "method": "Optuna Bayesian HPO",
+            "model": model_name,
+            "task_type": task,
+            "n_trials": n_trials,
+            "scoring": scoring,
+            "best_score": best_score,
+            "best_params": best_params,
+            "recommendation": (
+                f"Best {scoring}={best_score:.4f} with {best_params}. "
+                "Pass these via custom_models in train_model to lock them in."
+            ),
+        }
+        step = self._step(
+            "observation",
+            f"Optuna HPO: {model_name} — {scoring}={best_score:.4f}",
+            json.dumps(result),
+        )
+        return json.dumps(to_json_safe(result)), step, False
 
     # ------------------------------------------------------------------
     # Cross-validation

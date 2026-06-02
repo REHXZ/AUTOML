@@ -346,6 +346,97 @@ def stop_autopilot_session_api(project_id: str, session_id: str):
     abort(409, description=f"Session is not running (current status: {loaded.status}).")
 
 
+@app.get("/api/projects/<project_id>/runs")
+def list_runs_api(project_id: str):
+    store = ProjectStore()
+    _project_or_404(store, project_id)
+    runs = store.list_runs(project_id)
+    safe = [
+        {k: v for k, v in r.items() if k not in {"diagnostics", "leaderboard"}}
+        for r in runs
+    ]
+    return jsonify({"runs": safe})
+
+
+@app.post("/api/projects/<project_id>/runs/<run_id>/score")
+def score_run_api(project_id: str, run_id: str):
+    """Score new rows using a previously saved model pipeline.
+
+    Accepts either:
+      - JSON body: {"data": [{col: val, ...}, ...]}
+      - multipart/form-data with a "file" CSV field
+
+    Returns: {"run_id": ..., "task_type": ..., "predictions": [...]}
+    """
+    import io
+    import joblib
+    import pandas as pd
+
+    store = ProjectStore()
+    _project_or_404(store, project_id)
+
+    runs = store.list_runs(project_id)
+    run = next((r for r in runs if r.get("run_id") == run_id), None)
+    if run is None:
+        abort(404, description=f"Run '{run_id}' not found in project '{project_id}'.")
+
+    model_path = run.get("model_path")
+    if not model_path or not Path(model_path).exists():
+        abort(404, description=f"Model file not found for run '{run_id}'. Was it saved?")
+
+    target_column = run.get("target_column", "")
+    task_type = run.get("task_type", "")
+
+    # Resolve input data
+    content_type = request.content_type or ""
+    if "multipart/form-data" in content_type:
+        file = request.files.get("file")
+        if file is None:
+            abort(400, description="Multipart request must include a 'file' field.")
+        try:
+            df = pd.read_csv(io.BytesIO(file.read()))
+        except Exception as exc:
+            abort(400, description=f"Could not parse uploaded CSV: {exc}")
+    else:
+        body = request.get_json(silent=True) or {}
+        rows = body.get("data")
+        if not isinstance(rows, list) or not rows:
+            abort(400, description="JSON body must contain a non-empty 'data' array of row objects.")
+        try:
+            df = pd.DataFrame(rows)
+        except Exception as exc:
+            abort(400, description=f"Could not build DataFrame from data: {exc}")
+
+    # Drop target if accidentally included
+    feature_df = df.drop(columns=[target_column], errors="ignore")
+    if feature_df.empty or len(feature_df.columns) == 0:
+        abort(400, description="No feature columns found in the input data.")
+
+    try:
+        pipeline = joblib.load(model_path)
+        predictions = pipeline.predict(feature_df)
+    except Exception as exc:
+        abort(500, description=f"Scoring failed: {exc}")
+
+    preds_list = predictions.tolist() if hasattr(predictions, "tolist") else list(predictions)
+
+    result: dict[str, Any] = {
+        "run_id": run_id,
+        "task_type": task_type,
+        "predictions": preds_list,
+        "n_rows": len(preds_list),
+    }
+
+    if task_type == "classification" and hasattr(pipeline, "predict_proba"):
+        try:
+            proba = pipeline.predict_proba(feature_df)
+            result["probabilities"] = proba.tolist()
+        except Exception:
+            pass
+
+    return jsonify(result)
+
+
 @app.get("/api/projects/<project_id>/autopilot/sessions/<session_id>/notebook")
 def download_autopilot_notebook_api(project_id: str, session_id: str):
     store = ProjectStore()
