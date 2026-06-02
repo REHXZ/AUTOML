@@ -19,6 +19,7 @@ from .base import (
 
 configure_logging()
 log = logging.getLogger(__name__)
+from .drift_agent import DriftAgent
 from .eda_agent import EdaAgent
 from .feature_engineering_agent import FeatureEngineeringAgent
 from .fine_tuning_agent import FineTuningAgent
@@ -39,6 +40,10 @@ discovery platform. You direct a team of specialist sub-agents:
   • Researcher Agent — searches the web (via SearXNG) to answer domain
     questions, look up ML techniques, find benchmarks, or resolve
     uncertainties in the data.
+  • Drift Detection Agent — compares a reference dataset against a current
+    dataset and surfaces distributional changes (PSI, KS-test, JS divergence)
+    per feature. Use this for monitoring, pipeline health checks, or when the
+    user suspects data has shifted.
 
 ────────────────────────────────────────────────────────────────────────
 AIML LIFECYCLE (modified CRISP-DM)
@@ -353,6 +358,32 @@ def _tools() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "delegate_to_drift_detection",
+                "description": (
+                    "Dispatch the Drift Detection Agent to compare distributional "
+                    "changes between a reference dataset and a current dataset. "
+                    "Useful for monitoring, detecting covariate shift, or checking "
+                    "whether production data has drifted from training data."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "instructions": {
+                            "type": "string",
+                            "description": (
+                                "Instructions for the Drift Detection Agent. Include the "
+                                "reference dataset ID, current dataset ID, and optionally "
+                                "the target column to check for label drift."
+                            ),
+                        }
+                    },
+                    "required": ["instructions"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "record_observation",
                 "description": "Write your own observation/hypothesis to the shared notebook.",
                 "parameters": {
@@ -608,6 +639,13 @@ class AimlScientist(BaseAgent):
             sub = ResearcherAgent(self._client, self._deployment, self._ctx)
             summary = yield from sub.run(args.get("question", ""))
             log.info("Researcher Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
+            return json.dumps(to_json_safe(summary)), False
+
+        if name == "delegate_to_drift_detection":
+            log.info("Scientist delegating → Drift Detection Agent")
+            sub = DriftAgent(self._client, self._deployment, self._ctx)
+            summary = yield from sub.run(args.get("instructions", ""))
+            log.info("Drift Detection Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
             return json.dumps(to_json_safe(summary)), False
 
         if name == "record_observation":

@@ -7,6 +7,7 @@ Architecture:
     • ModelingAgent
     • ReviewAgent
     • FineTuningAgent
+    • DriftAgent
 
 All agents share a single AgentContext (notebook, datasets, runs) and yield
 AutopilotStep objects up to the UI.
@@ -19,6 +20,7 @@ from .base import (
     build_azure_client,
     get_deployment,
 )
+from .drift_agent import DriftAgent
 from .eda_agent import EdaAgent
 from .feature_engineering_agent import FeatureEngineeringAgent
 from .fine_tuning_agent import FineTuningAgent
@@ -32,6 +34,7 @@ __all__ = [
     "AimlScientist",
     "AutopilotStep",
     "BaseAgent",
+    "DriftAgent",
     "EdaAgent",
     "FeatureEngineeringAgent",
     "FineTuningAgent",
