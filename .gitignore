@@ -13,6 +13,8 @@ local_projects/
 *.joblib
 *.log
 .tmp_pytest_*/
+catboost_info/
+logs/
 react-frontend/node_modules/
 react-frontend/dist/
 react-frontend/.npm-cache/
