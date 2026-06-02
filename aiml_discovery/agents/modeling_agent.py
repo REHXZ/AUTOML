@@ -120,6 +120,29 @@ CUSTOM MODELS
   Any sklearn-compatible estimator is valid. The class must be importable.
   Custom models run AFTER standard ones and are always included.
 
+CROSS-VALIDATION (cross_validate_model)
+  Use when:
+    – The dataset is small (< 5k rows) and you want a reliable estimate
+      before committing to a full train_model run.
+    – You want to compare two models on the same fold structure.
+    – You need to check if a model degrades badly across folds (high std).
+  Set time_column to get TimeSeriesSplit; omit for KFold.
+  Set class_weight="balanced" for imbalanced classification.
+
+HYPERPARAMETER TUNING (tune_hyperparameters)
+  Use AFTER you have identified the best model family from the baseline
+  leaderboard. Runs RandomizedSearchCV with a sensible default param grid.
+  The result includes the best params; pass them via custom_models in a
+  follow-up train_model to lock them in as a tuned model.
+  Avoid tuning slow models (SVR, SVC, MLP) on large datasets.
+
+CLASS IMBALANCE
+  If EDA reports class imbalance (ratio > 3×), consider:
+    1. Feature Engineering → smote (oversample the minority class first), OR
+    2. cross_validate_model / train_model with class_weight="balanced"
+       (cost-sensitive training; no extra rows needed).
+  For very severe imbalance (ratio > 10×), prefer SMOTE + class_weight together.
+
 USE THE RESEARCHER WHEN YOU NEED EXTERNAL KNOWLEDGE
   Call spawn_researcher if you need to:
     – Look up best-known benchmarks for the task type / dataset size.
@@ -222,6 +245,16 @@ def _tools() -> list[dict]:
                                 "These run alongside (or instead of) standard models."
                             ),
                         },
+                        "class_weight": {
+                            "type": "string",
+                            "enum": ["balanced", "none"],
+                            "description": (
+                                "Set 'balanced' for imbalanced classification. "
+                                "Applies class_weight to all classifiers that support it "
+                                "(LR, RF, ET, Decision Tree, SGD, SVC, etc.). "
+                                "Use instead of or combined with SMOTE resampling."
+                            ),
+                        },
                     },
                     "required": ["dataset_id", "target_column"],
                 },
@@ -315,6 +348,129 @@ def _tools() -> list[dict]:
                         }
                     },
                     "required": ["question"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "build_ensemble",
+                "description": (
+                    "Build a VotingClassifier or VotingRegressor (soft-voting for classifiers) "
+                    "OR a StackingClassifier / StackingRegressor from the best models in completed runs. "
+                    "Use this as a final step when individual models have plateaued to squeeze out "
+                    "extra performance through combination. "
+                    "ensemble_type: 'voting' (fast, averages predictions) or "
+                    "'stacking' (slow, trains a meta-learner on top)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_id": {"type": "string"},
+                        "target_column": {"type": "string"},
+                        "model_names": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "Names of the models to include in the ensemble. "
+                                "Should be 2-5 diverse models that performed well individually."
+                            ),
+                        },
+                        "ensemble_type": {
+                            "type": "string",
+                            "enum": ["voting", "stacking"],
+                            "description": "Default 'voting'. Use 'stacking' for a meta-learner.",
+                        },
+                        "time_column": {
+                            "type": "string",
+                            "description": "If set, uses chronological split.",
+                        },
+                        "test_size": {"type": "number", "description": "Default 0.2"},
+                        "class_weight": {
+                            "type": "string",
+                            "enum": ["balanced", "none"],
+                        },
+                    },
+                    "required": ["dataset_id", "target_column", "model_names"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "cross_validate_model",
+                "description": (
+                    "Run k-fold (or TimeSeriesSplit for forecasting) cross-validation on "
+                    "a single model and return mean ± std of the primary metric. "
+                    "Use this when you want a more robust performance estimate before "
+                    "committing to a full train_model run, or when the dataset is small."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_id": {"type": "string"},
+                        "target_column": {"type": "string"},
+                        "model_name": {
+                            "type": "string",
+                            "description": "One of the standard model names (e.g. 'Random Forest', 'XGBoost').",
+                        },
+                        "n_splits": {
+                            "type": "integer",
+                            "description": "Number of CV folds (default 5).",
+                        },
+                        "time_column": {
+                            "type": "string",
+                            "description": "If set, uses TimeSeriesSplit (chronological CV).",
+                        },
+                        "class_weight": {
+                            "type": "string",
+                            "enum": ["balanced", "none"],
+                            "description": "Set 'balanced' for class-imbalance. Applies to classifiers only.",
+                        },
+                    },
+                    "required": ["dataset_id", "target_column", "model_name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "tune_hyperparameters",
+                "description": (
+                    "Run randomized hyperparameter search on a specific model over a given dataset. "
+                    "Returns the best params and their cross-validated score. "
+                    "Use after baseline training when you want to squeeze more out of the best model."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_id": {"type": "string"},
+                        "target_column": {"type": "string"},
+                        "model_name": {
+                            "type": "string",
+                            "description": "Name of the model to tune.",
+                        },
+                        "n_iter": {
+                            "type": "integer",
+                            "description": "Number of random search iterations (default 20).",
+                        },
+                        "n_splits": {
+                            "type": "integer",
+                            "description": "CV folds for the inner loop (default 3).",
+                        },
+                        "time_column": {
+                            "type": "string",
+                            "description": "If set, uses TimeSeriesSplit for CV.",
+                        },
+                        "param_grid": {
+                            "type": "object",
+                            "description": (
+                                "Optional custom param distributions. "
+                                "If omitted, a sensible default grid is used for the named model."
+                            ),
+                        },
+                    },
+                    "required": ["dataset_id", "target_column", "model_name"],
                 },
             },
         },
@@ -490,6 +646,12 @@ class ModelingAgent(BaseAgent):
                 self._step("observation", "Modeling note", text),
                 False,
             )
+        if name == "build_ensemble":
+            return self._build_ensemble(args)
+        if name == "cross_validate_model":
+            return self._cross_validate(args)
+        if name == "tune_hyperparameters":
+            return self._tune(args)
         if name == "done":
             self._summary = to_json_safe(args)
             return json.dumps({"status": "noted"}), None, True
@@ -596,19 +758,23 @@ class ModelingAgent(BaseAgent):
                 False,
             )
 
+        class_weight = args.get("class_weight") or None
+        if class_weight == "none":
+            class_weight = None
         settings = TrainingSettings(
             target_column=target,
             test_size=float(args.get("test_size", 0.2)),
             random_state=int(args.get("random_state", 42)),
             time_column=time_column,
+            class_weight=class_weight,
         )
         include_models = args.get("include_models") or None
         custom_models = args.get("custom_models") or None
         split_mode = "chronological" if time_column else "random"
         log.info(
-            "train_model | dataset=%s target=%s split=%s time_column=%r test_size=%.2f include=%s custom=%s",
+            "train_model | dataset=%s target=%s split=%s time_column=%r test_size=%.2f include=%s custom=%s class_weight=%s",
             ds.name, target, split_mode, time_column, settings.test_size,
-            include_models or "all", len(custom_models) if custom_models else 0,
+            include_models or "all", len(custom_models) if custom_models else 0, class_weight,
         )
         try:
             result, model = train_automl(
@@ -792,6 +958,119 @@ class ModelingAgent(BaseAgent):
         })
         return vision_tool_content(text, fig), step, False
 
+    def _build_ensemble(self, args: dict) -> tuple[str, AutopilotStep | None, bool]:
+        from ..ingestion import load_dataset
+        from ..training import (
+            TrainingSettings, _candidate_models, build_preprocessor,
+            infer_task_type, CLASSIFICATION, train_automl,
+        )
+        from sklearn.pipeline import Pipeline
+        from sklearn.ensemble import (
+            VotingClassifier, VotingRegressor,
+            StackingClassifier, StackingRegressor,
+        )
+        from sklearn.linear_model import LogisticRegression, Ridge
+
+        ds = self._ctx.find_dataset(args.get("dataset_id", ""))
+        if ds is None:
+            return json.dumps({"error": f"Dataset '{args.get('dataset_id')}' not found."}), None, False
+        target = args.get("target_column", "")
+        model_names = args.get("model_names") or []
+        ensemble_type = args.get("ensemble_type", "voting")
+        time_column = args.get("time_column") or None
+        class_weight = args.get("class_weight") or None
+        if class_weight == "none":
+            class_weight = None
+
+        if len(model_names) < 2:
+            return json.dumps({"error": "Provide at least 2 model_names for an ensemble."}), None, False
+
+        loaded = load_dataset(ds.file_path, ds.table_name)
+        df = loaded.dataframe.dropna(subset=[target])
+        if target not in df.columns:
+            return json.dumps({"error": f"Target '{target}' not found."}), None, False
+
+        feature_cols = [c for c in df.columns if c != target and c != time_column]
+        X = df[feature_cols]
+        y = df[target]
+        task = infer_task_type(y)
+
+        candidates = _candidate_models(task, 42, 1, class_weight=class_weight)
+        missing = [n for n in model_names if n not in candidates]
+        if missing:
+            return json.dumps({"error": f"Models not found: {missing}. Available: {list(candidates.keys())}"}), None, False
+
+        preprocessor = build_preprocessor(X)
+        estimators = []
+        for name in model_names:
+            inner_pipe = Pipeline([("preprocessor", preprocessor), ("model", candidates[name])])
+            estimators.append((name.replace(" ", "_").lower(), inner_pipe))
+
+        try:
+            if ensemble_type == "stacking":
+                meta = LogisticRegression(max_iter=500) if task == CLASSIFICATION else Ridge()
+                if task == CLASSIFICATION:
+                    ensemble = StackingClassifier(estimators=estimators, final_estimator=meta, passthrough=False, n_jobs=1)
+                else:
+                    ensemble = StackingRegressor(estimators=estimators, final_estimator=meta, passthrough=False, n_jobs=1)
+            else:
+                if task == CLASSIFICATION:
+                    ensemble = VotingClassifier(estimators=estimators, voting="soft", n_jobs=1)
+                else:
+                    ensemble = VotingRegressor(estimators=estimators, n_jobs=1)
+
+            settings = TrainingSettings(
+                target_column=target,
+                test_size=float(args.get("test_size", 0.2)),
+                random_state=42,
+                time_column=time_column,
+                class_weight=class_weight,
+            )
+            # Train via train_automl using only the ensemble as a custom model
+            custom_spec = [{"name": f"{ensemble_type.title()} Ensemble", "class": "__ensemble__"}]
+            # We train it directly instead of through the registry
+            from ..training import build_preprocessor as bp, _evaluate_model, _rank_leaderboard
+            from sklearn.model_selection import train_test_split
+            import pandas as pd
+
+            if time_column and time_column in df.columns:
+                from pandas import to_datetime
+                order = to_datetime(df[time_column], errors="coerce").fillna(df[time_column])
+                sort_idx = order.argsort(kind="mergesort")
+                X_sorted = X.iloc[sort_idx].reset_index(drop=True)
+                y_sorted = y.iloc[sort_idx].reset_index(drop=True)
+                split_at = int(len(X_sorted) * (1 - settings.test_size))
+                x_train, x_test = X_sorted.iloc[:split_at], X_sorted.iloc[split_at:]
+                y_train, y_test = y_sorted.iloc[:split_at], y_sorted.iloc[split_at:]
+            else:
+                x_train, x_test, y_train, y_test = train_test_split(
+                    X, y, test_size=settings.test_size, random_state=42
+                )
+
+            ensemble.fit(x_train, y_train)
+            preds = ensemble.predict(x_test)
+            metrics = _evaluate_model(task, y_test, preds, ensemble, x_test)
+        except Exception as exc:
+            log.error("build_ensemble | FAILED: %s", exc)
+            return json.dumps({"error": f"Ensemble build failed: {exc}"}), None, False
+
+        metrics_str = ", ".join(f"{k}={v:.4f}" for k, v in metrics.items())
+        result = {
+            "ensemble_type": ensemble_type,
+            "task_type": task,
+            "model_names": model_names,
+            "metrics": to_json_safe(metrics),
+            "summary": f"{ensemble_type.title()} ensemble of {model_names}: {metrics_str}",
+        }
+        log.info("build_ensemble | OK type=%s task=%s metrics=%s", ensemble_type, task, metrics_str)
+        step = self._step(
+            "observation",
+            f"{ensemble_type.title()} Ensemble: {metrics_str}",
+            f"Models: {model_names}",
+            data=result,
+        )
+        return json.dumps(to_json_safe(result)), step, False
+
     def _find_run(self, run_id: str) -> dict | None:
         if not run_id:
             return None
@@ -799,3 +1078,203 @@ class ModelingAgent(BaseAgent):
             if r.get("run_id") == run_id:
                 return r
         return None
+
+    # ------------------------------------------------------------------
+    # Cross-validation
+    # ------------------------------------------------------------------
+
+    def _cross_validate(self, args: dict) -> tuple[str, AutopilotStep | None, bool]:
+        from ..ingestion import load_dataset
+        from ..training import (
+            _candidate_models, build_preprocessor, infer_task_type, CLASSIFICATION,
+        )
+        from sklearn.model_selection import cross_val_score, TimeSeriesSplit, KFold
+        from sklearn.pipeline import Pipeline
+
+        ds = self._ctx.find_dataset(args.get("dataset_id", ""))
+        if ds is None:
+            return json.dumps({"error": f"Dataset '{args.get('dataset_id')}' not found."}), None, False
+        target = args.get("target_column", "")
+        model_name = args.get("model_name", "")
+        n_splits = int(args.get("n_splits") or 5)
+        time_column = args.get("time_column") or None
+        class_weight = args.get("class_weight", "none")
+
+        loaded = load_dataset(ds.file_path, ds.table_name)
+        df = loaded.dataframe.dropna(subset=[target])
+        if target not in df.columns:
+            return json.dumps({"error": f"Target '{target}' not found."}), None, False
+
+        feature_cols = [c for c in df.columns if c != target and c != time_column]
+        X = df[feature_cols]
+        y = df[target]
+        task = infer_task_type(y)
+
+        candidates = _candidate_models(task, 42, 1)
+        if model_name not in candidates:
+            return json.dumps({"error": f"Model '{model_name}' not found. Available: {list(candidates.keys())}"}), None, False
+
+        model = candidates[model_name]
+        if class_weight == "balanced" and task == CLASSIFICATION and hasattr(model, "class_weight"):
+            model.class_weight = "balanced"
+
+        preprocessor = build_preprocessor(X)
+        pipeline = Pipeline([("preprocessor", preprocessor), ("model", model)])
+        cv = (TimeSeriesSplit(n_splits=n_splits) if time_column
+              else KFold(n_splits=n_splits, shuffle=True, random_state=42))
+        scoring = "f1_weighted" if task == CLASSIFICATION else "r2"
+
+        try:
+            scores = cross_val_score(pipeline, X.fillna(X.median(numeric_only=True)), y,
+                                     cv=cv, scoring=scoring, n_jobs=-1)
+        except Exception as exc:
+            return json.dumps({"error": f"Cross-validation failed: {exc}"}), None, False
+
+        import numpy as np
+        result = {
+            "model": model_name, "task_type": task,
+            "cv_type": "TimeSeriesSplit" if time_column else "KFold",
+            "n_splits": n_splits, "scoring": scoring,
+            "mean_score": round(float(scores.mean()), 4),
+            "std_score": round(float(scores.std()), 4),
+            "scores": [round(float(s), 4) for s in scores],
+        }
+        log.info("cross_validate | model=%s scoring=%s mean=%.4f std=%.4f",
+                 model_name, scoring, scores.mean(), scores.std())
+        step = self._step(
+            "observation",
+            f"CV: {model_name} — {scoring}={result['mean_score']:.4f} ± {result['std_score']:.4f}",
+            json.dumps(result),
+        )
+        return json.dumps(to_json_safe(result)), step, False
+
+    # ------------------------------------------------------------------
+    # Hyperparameter tuning
+    # ------------------------------------------------------------------
+
+    _DEFAULT_PARAM_GRIDS: dict[str, dict] = {
+        "Random Forest": {
+            "model__n_estimators": [100, 200, 300],
+            "model__max_depth": [None, 5, 10, 20],
+            "model__min_samples_leaf": [1, 2, 5],
+        },
+        "Extra Trees": {
+            "model__n_estimators": [100, 200, 300],
+            "model__max_depth": [None, 5, 10, 20],
+            "model__min_samples_leaf": [1, 2, 5],
+        },
+        "Gradient Boosting": {
+            "model__n_estimators": [100, 200, 300],
+            "model__max_depth": [3, 5, 7],
+            "model__learning_rate": [0.05, 0.1, 0.2],
+        },
+        "Hist Gradient Boosting": {
+            "model__max_iter": [100, 200, 300],
+            "model__max_depth": [None, 5, 10],
+            "model__learning_rate": [0.05, 0.1, 0.2],
+        },
+        "XGBoost": {
+            "model__n_estimators": [100, 200, 300],
+            "model__max_depth": [3, 5, 7],
+            "model__learning_rate": [0.03, 0.05, 0.1],
+            "model__subsample": [0.7, 0.8, 1.0],
+        },
+        "LightGBM": {
+            "model__n_estimators": [100, 200, 300],
+            "model__num_leaves": [20, 31, 50],
+            "model__learning_rate": [0.03, 0.05, 0.1],
+        },
+        "Ridge": {"model__alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+        "Lasso": {"model__alpha": [0.001, 0.01, 0.1, 1.0]},
+        "ElasticNet": {
+            "model__alpha": [0.001, 0.01, 0.1, 1.0],
+            "model__l1_ratio": [0.25, 0.5, 0.75],
+        },
+        "Logistic Regression": {
+            "model__C": [0.01, 0.1, 1.0, 10.0],
+            "model__solver": ["lbfgs", "saga"],
+        },
+        "K-Nearest Neighbors": {"model__n_neighbors": [3, 5, 7, 11, 15]},
+        "MLP": {
+            "model__hidden_layer_sizes": [(50,), (100,), (100, 50), (200, 100)],
+            "model__alpha": [0.0001, 0.001, 0.01],
+        },
+    }
+
+    def _tune(self, args: dict) -> tuple[str, AutopilotStep | None, bool]:
+        from ..ingestion import load_dataset
+        from ..training import (
+            _candidate_models, build_preprocessor, infer_task_type, CLASSIFICATION,
+        )
+        from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit, KFold
+        from sklearn.pipeline import Pipeline
+
+        ds = self._ctx.find_dataset(args.get("dataset_id", ""))
+        if ds is None:
+            return json.dumps({"error": f"Dataset '{args.get('dataset_id')}' not found."}), None, False
+        target = args.get("target_column", "")
+        model_name = args.get("model_name", "")
+        n_iter = int(args.get("n_iter") or 20)
+        n_splits = int(args.get("n_splits") or 3)
+        time_column = args.get("time_column") or None
+        user_grid = args.get("param_grid") or {}
+
+        loaded = load_dataset(ds.file_path, ds.table_name)
+        df = loaded.dataframe.dropna(subset=[target])
+        if target not in df.columns:
+            return json.dumps({"error": f"Target '{target}' not found."}), None, False
+
+        feature_cols = [c for c in df.columns if c != target and c != time_column]
+        X = df[feature_cols]
+        y = df[target]
+        task = infer_task_type(y)
+
+        candidates = _candidate_models(task, 42, 1)
+        if model_name not in candidates:
+            return json.dumps({"error": f"Model '{model_name}' not found. Available: {list(candidates.keys())}"}), None, False
+
+        param_grid = user_grid or self._DEFAULT_PARAM_GRIDS.get(model_name, {})
+        if not param_grid:
+            return json.dumps({
+                "error": (
+                    f"No default parameter grid for '{model_name}'. "
+                    "Pass params.param_grid explicitly, e.g. "
+                    '{"model__n_estimators": [100, 200, 300], "model__max_depth": [3, 5, 7]}'
+                )
+            }), None, False
+
+        preprocessor = build_preprocessor(X)
+        pipeline = Pipeline([("preprocessor", preprocessor), ("model", candidates[model_name])])
+        cv = (TimeSeriesSplit(n_splits=n_splits) if time_column
+              else KFold(n_splits=n_splits, shuffle=True, random_state=42))
+        scoring = "f1_weighted" if task == CLASSIFICATION else "r2"
+
+        try:
+            search = RandomizedSearchCV(
+                pipeline, param_grid, n_iter=n_iter, cv=cv, scoring=scoring,
+                random_state=42, n_jobs=-1, refit=True,
+            )
+            search.fit(X.fillna(X.median(numeric_only=True)), y)
+        except Exception as exc:
+            return json.dumps({"error": f"Hyperparameter search failed: {exc}"}), None, False
+
+        best_params = {k: v for k, v in search.best_params_.items()}
+        result = {
+            "model": model_name, "task_type": task,
+            "best_score": round(float(search.best_score_), 4),
+            "scoring": scoring,
+            "best_params": best_params,
+            "n_iter": n_iter,
+            "recommendation": (
+                f"Best {scoring}={search.best_score_:.4f} with {best_params}. "
+                "Pass these via custom_models in train_model to lock them in."
+            ),
+        }
+        log.info("tune_hyperparameters | model=%s best_score=%.4f best_params=%s",
+                 model_name, search.best_score_, best_params)
+        step = self._step(
+            "observation",
+            f"Tuned: {model_name} — {scoring}={result['best_score']:.4f}",
+            json.dumps(result),
+        )
+        return json.dumps(to_json_safe(result)), step, False

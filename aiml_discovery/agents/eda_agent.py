@@ -25,10 +25,16 @@ configure_logging()
 log = logging.getLogger(__name__)
 
 # Chart types that require at least one column parameter in params.
-_PARAM_REQUIRED_CHARTS = frozenset({"histogram", "bar", "scatter", "box", "violin", "pairplot"})
+_PARAM_REQUIRED_CHARTS = frozenset({
+    "histogram", "bar", "scatter", "box", "violin", "pairplot", "line", "qq_plot",
+})
 # All known per-chart param keys — used to detect flat args from LLM.
-_KNOWN_PARAM_KEYS = frozenset({"column", "bins", "top_n", "x_column", "y_column",
-                                "color_column", "group_by", "columns"})
+_KNOWN_PARAM_KEYS = frozenset({
+    "column", "bins", "top_n", "x_column", "y_column",
+    "color_column", "group_by", "columns",
+    # new chart / analysis params
+    "target_column", "time_column", "period", "model", "nlags", "normalize",
+})
 
 
 _SYSTEM_PROMPT = """\
@@ -44,16 +50,30 @@ How to work:
    missing patterns, candidate-target relationships, and anything else that
    looks interesting. You have vision — describe what you SEE in each image:
    skew, outliers, clusters, class imbalance, leakage hints, multimodality.
-3. After every chart, write a one-paragraph observation: what does this tell
-   us about modelling strategy?
-4. When you have a coherent picture, call record_finding(text) to leave a
-   short bullet-point note in the shared notebook for the Scientist.
-5. When done, call done(summary) with a structured JSON of your key
+3. Call run_analysis for deeper statistical insight:
+   • class_balance      — check target imbalance before any classification run
+   • target_correlation — which features correlate most with the target?
+   • mutual_information — non-linear feature-target association
+   • normality_test     — is the target / a key feature Gaussian or skewed?
+   • vif                — multicollinearity (high VIF → drop or combine cols)
+   • outlier_summary    — how many outliers per numeric column?
+   • seasonal_decompose — for time-series data: separate trend, seasonal,
+                          residual components to see if seasonality is present
+   • stationarity_test  — ADF + KPSS to decide if differencing is needed
+   • acf_pacf           — autocorrelation / partial-autocorrelation to pick
+                          lag order for ARIMA or lag features
+4. After every chart or analysis, write a one-paragraph observation:
+   what does this tell us about modelling strategy?
+5. When you have a coherent picture, call record_finding(text) to leave
+   short bullet-point notes in the shared notebook.
+6. When done, call done(summary) with a structured JSON of your key
    observations: candidate targets, problematic columns, recommended
    transformations, suspected leakage, suggested next moves.
 
 Be thorough. Do not stop after two charts — explore every angle the
-Scientist's instructions imply.
+Scientist's instructions imply. For any time-series dataset always run
+seasonal_decompose and acf_pacf to characterise seasonality before
+recommending lag/rolling features.
 """
 
 
@@ -79,14 +99,17 @@ def _tools() -> list[dict]:
                 "name": "create_chart",
                 "description": (
                     "Generate a chart and receive the rendered image for visual analysis. "
-                    "chart_type: 'histogram' (params: column, bins?); "
+                    "chart_type: "
+                    "'histogram' (params: column, bins?); "
                     "'bar' (params: column, top_n?); "
                     "'scatter' (params: x_column, y_column, color_column?); "
                     "'correlation_heatmap'; "
                     "'box' (params: column, group_by?); "
                     "'missing_heatmap'; "
                     "'violin' (params: column, group_by?); "
-                    "'pairplot' (params: columns, color_column?) — up to 4 numeric columns."
+                    "'pairplot' (params: columns, color_column?) — up to 4 numeric columns; "
+                    "'line' (params: x_column, y_column or columns, color_column?) — time-series or ordered line chart; "
+                    "'qq_plot' (params: column) — normal Q-Q plot for distribution check."
                 ),
                 "parameters": {
                     "type": "object",
@@ -97,12 +120,51 @@ def _tools() -> list[dict]:
                             "enum": [
                                 "histogram", "bar", "scatter",
                                 "correlation_heatmap", "box", "missing_heatmap",
-                                "violin", "pairplot",
+                                "violin", "pairplot", "line", "qq_plot",
                             ],
                         },
                         "params": {"type": "object"},
                     },
                     "required": ["dataset_id", "chart_type"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_analysis",
+                "description": (
+                    "Run a statistical or time-series analysis and receive structured results "
+                    "(plus an optional chart image). "
+                    "analysis_type: "
+                    "'class_balance' (params: column) — class counts and imbalance ratio; "
+                    "'target_correlation' (params: target_column) — feature correlations with the target; "
+                    "'mutual_information' (params: target_column) — feature MI scores; "
+                    "'normality_test' (params: column) — Shapiro-Wilk / D'Agostino skew+kurtosis; "
+                    "'vif' — Variance Inflation Factor for multicollinearity; "
+                    "'outlier_summary' — IQR and z-score outlier counts per numeric column; "
+                    "'seasonal_decompose' (params: column, time_column, period?, model?) — "
+                        "trend/seasonal/residual decomposition (requires statsmodels); "
+                    "'stationarity_test' (params: column) — ADF + KPSS stationarity tests; "
+                    "'acf_pacf' (params: column, nlags?) — ACF and PACF with chart."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_id": {"type": "string"},
+                        "analysis_type": {
+                            "type": "string",
+                            "enum": [
+                                "class_balance", "target_correlation",
+                                "mutual_information", "normality_test",
+                                "vif", "outlier_summary",
+                                "seasonal_decompose", "stationarity_test",
+                                "acf_pacf",
+                            ],
+                        },
+                        "params": {"type": "object"},
+                    },
+                    "required": ["dataset_id", "analysis_type"],
                 },
             },
         },
@@ -212,6 +274,8 @@ class EdaAgent(BaseAgent):
             return self._profile(args.get("dataset_id", ""))
         if name == "create_chart":
             return self._chart(args)
+        if name == "run_analysis":
+            return self._analysis(args)
         if name == "record_finding":
             return self._record(args.get("text", ""))
         if name == "done":
@@ -325,6 +389,33 @@ class EdaAgent(BaseAgent):
             self._step("observation", "EDA finding", text),
             False,
         )
+
+    def _analysis(self, args: dict) -> tuple[str | list, AutopilotStep | None, bool]:
+        dataset_id = args.get("dataset_id", "")
+        analysis_type = args.get("analysis_type", "")
+        params: dict = args.get("params") or {}
+
+        ds = self._ctx.find_dataset(dataset_id)
+        if ds is None:
+            return json.dumps({"error": f"Dataset '{dataset_id}' not found."}), None, False
+
+        loaded = load_dataset(ds.file_path, ds.table_name)
+        log.info("run_analysis | dataset=%s analysis_type=%s params=%s", ds.name, analysis_type, params)
+
+        result, fig, title = _run_analysis(loaded.dataframe, ds.name, analysis_type, params)
+        if "error" in result:
+            log.warning("run_analysis | FAILED dataset=%s type=%s error=%s", ds.name, analysis_type, result["error"])
+            return json.dumps(result), None, False
+
+        log.info("run_analysis | OK dataset=%s type=%s title=%s", ds.name, analysis_type, title)
+        step = self._step(
+            "chart" if fig is not None else "tool_result",
+            title,
+            f"Analysis: {analysis_type} on {ds.name}",
+            data={"figure": fig, "dataset_name": ds.name, "analysis_type": analysis_type, **result} if fig else
+                 {"dataset_name": ds.name, "analysis_type": analysis_type, **result},
+        )
+        return vision_tool_content(json.dumps(to_json_safe(result)), fig), step, False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -508,8 +599,376 @@ def _build_figure(
                 f"Missing pattern in {len(missing_cols)} cols of {dataset_name}",
             )
 
+        if chart_type == "line":
+            x_col = params.get("x_column")
+            y_cols = params.get("columns") or ([params.get("y_column")] if params.get("y_column") else None)
+            if not x_col or x_col not in df.columns:
+                return None, "", f"x_column '{x_col}' not found."
+            if not y_cols:
+                return None, "", "Provide params.y_column or params.columns for the line chart."
+            y_cols = [c for c in y_cols if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+            if not y_cols:
+                return None, "", "No valid numeric y columns found."
+            color_col = params.get("color_column")
+            plot_df = df.sort_values(x_col).head(5000)
+            if len(y_cols) == 1:
+                fig = px.line(
+                    plot_df, x=x_col, y=y_cols[0],
+                    color=color_col if color_col and color_col in df.columns else None,
+                    title=f"Line: {y_cols[0]} over {x_col}", template="plotly_white",
+                )
+            else:
+                import plotly.graph_objects as _go
+                fig = _go.Figure()
+                for y in y_cols:
+                    fig.add_trace(_go.Scatter(x=plot_df[x_col], y=plot_df[y], mode="lines", name=y))
+                fig.update_layout(title=f"Line chart over {x_col}", template="plotly_white")
+            label = f"Line: {y_cols} over {x_col}"
+            return fig, label, label
+
+        if chart_type == "qq_plot":
+            import scipy.stats as stats_scipy
+            col = params.get("column")
+            if not col or col not in df.columns:
+                return None, "", f"Column '{col}' not found."
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                return None, "", f"Column '{col}' must be numeric for Q-Q plot."
+            sample = df[col].dropna().values
+            (osm, osr), (slope, intercept, _) = stats_scipy.probplot(sample, dist="norm")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=list(osm), y=list(osr), mode="markers", name="Quantiles"))
+            fig.add_trace(go.Scatter(
+                x=[float(min(osm)), float(max(osm))],
+                y=[slope * float(min(osm)) + intercept, slope * float(max(osm)) + intercept],
+                mode="lines", name="Normal line",
+            ))
+            fig.update_layout(
+                title=f"Q-Q Plot: {col}", xaxis_title="Theoretical Quantiles",
+                yaxis_title="Sample Quantiles", template="plotly_white",
+            )
+            return fig, f"Q-Q Plot: {col}", f"Normal Q-Q plot of {col} in {dataset_name}"
+
         log.warning("_build_figure | unknown chart_type=%r for dataset=%s", chart_type, dataset_name)
         return None, "", f"Unknown chart_type: {chart_type}"
     except Exception as exc:
         log.exception("_build_figure | exception chart_type=%r dataset=%s", chart_type, dataset_name)
         return None, "", f"Chart error: {exc}"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Statistical / time-series analyses
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _run_analysis(
+    df: pd.DataFrame, dataset_name: str, analysis_type: str, params: dict
+) -> tuple[dict, go.Figure | None, str]:
+    """Run a named analysis. Returns (result_dict, optional_fig, title)."""
+    try:
+        if analysis_type == "class_balance":
+            col = params.get("column")
+            if not col or col not in df.columns:
+                return {"error": f"params.column required and must exist. Available: {list(df.columns)[:20]}"}, None, ""
+            counts = df[col].value_counts()
+            imbalance = float(counts.max() / counts.min()) if counts.min() > 0 else float("inf")
+            result = {
+                "column": col,
+                "class_counts": counts.to_dict(),
+                "n_classes": int(len(counts)),
+                "imbalance_ratio": round(imbalance, 3),
+                "is_imbalanced": imbalance > 3.0,
+                "recommendation": (
+                    "Apply SMOTE / resampling before training." if imbalance > 3.0
+                    else "Class balance looks acceptable."
+                ),
+            }
+            fig = px.bar(
+                x=counts.index.astype(str).tolist(), y=counts.values.tolist(),
+                title=f"Class Balance: {col} in {dataset_name}",
+                labels={"x": col, "y": "count"}, template="plotly_white",
+            )
+            return result, fig, f"Class Balance: {col}"
+
+        if analysis_type == "target_correlation":
+            target = params.get("target_column")
+            if not target or target not in df.columns:
+                return {"error": f"params.target_column required. Available: {list(df.columns)[:20]}"}, None, ""
+            num = df.select_dtypes(include="number")
+            if target not in num.columns:
+                return {"error": f"Target '{target}' must be numeric for correlation."}, None, ""
+            corr = num.corr()[target].drop(target).sort_values(key=abs, ascending=False)
+            result = {
+                "target_column": target,
+                "correlations": corr.round(4).to_dict(),
+                "top_positive": corr[corr > 0].head(5).index.tolist(),
+                "top_negative": corr[corr < 0].head(5).index.tolist(),
+            }
+            fig = px.bar(
+                x=corr.index.tolist(), y=corr.values.tolist(),
+                title=f"Feature Correlation with '{target}'",
+                labels={"x": "Feature", "y": "Pearson r"}, template="plotly_white",
+                color=corr.values.tolist(), color_continuous_scale="RdBu_r",
+                color_continuous_midpoint=0,
+            )
+            return result, fig, f"Target Correlation: {target}"
+
+        if analysis_type == "mutual_information":
+            target = params.get("target_column")
+            if not target or target not in df.columns:
+                return {"error": f"params.target_column required. Available: {list(df.columns)[:20]}"}, None, ""
+            from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+            from ..training import infer_task_type
+            y = df[target]
+            task = infer_task_type(y)
+            num_cols = [c for c in df.select_dtypes(include="number").columns if c != target]
+            if not num_cols:
+                return {"error": "No numeric feature columns for mutual information."}, None, ""
+            X = df[num_cols].fillna(df[num_cols].median())
+            mi_fn = mutual_info_classif if task == "classification" else mutual_info_regression
+            mi = mi_fn(X, y, random_state=42)
+            mi_series = pd.Series(mi, index=num_cols).sort_values(ascending=False)
+            result = {
+                "target_column": target,
+                "task_type": task,
+                "mutual_information": mi_series.round(4).to_dict(),
+                "top_features": mi_series.head(10).index.tolist(),
+            }
+            fig = px.bar(
+                x=mi_series.index.tolist(), y=mi_series.values.tolist(),
+                title=f"Mutual Information with '{target}' ({task})",
+                labels={"x": "Feature", "y": "MI score"}, template="plotly_white",
+            )
+            return result, fig, f"Mutual Information: {target}"
+
+        if analysis_type == "normality_test":
+            col = params.get("column")
+            if not col or col not in df.columns:
+                return {"error": f"params.column required. Available: {list(df.columns)[:20]}"}, None, ""
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                return {"error": f"Column '{col}' must be numeric."}, None, ""
+            import scipy.stats as sp_stats
+            sample = df[col].dropna().values
+            if len(sample) > 5000:
+                sample = sample[:5000]
+            result: dict = {
+                "column": col,
+                "n": int(len(sample)),
+                "mean": float(pd.Series(sample).mean()),
+                "std": float(pd.Series(sample).std()),
+                "skewness": float(sp_stats.skew(sample)),
+                "kurtosis": float(sp_stats.kurtosis(sample)),
+            }
+            if len(sample) <= 5000:
+                try:
+                    stat, p = sp_stats.shapiro(sample[:5000])
+                    result["shapiro_stat"] = round(float(stat), 4)
+                    result["shapiro_p"] = round(float(p), 6)
+                    result["is_normal_shapiro"] = bool(p > 0.05)
+                except Exception:
+                    pass
+            try:
+                stat2, p2 = sp_stats.normaltest(sample)
+                result["dagostino_stat"] = round(float(stat2), 4)
+                result["dagostino_p"] = round(float(p2), 6)
+                result["is_normal_dagostino"] = bool(p2 > 0.05)
+            except Exception:
+                pass
+            result["recommendation"] = (
+                "Distribution looks approximately normal." if result.get("is_normal_dagostino", True)
+                else "Non-normal; consider log_transform, power_transform, or quantile_transform."
+            )
+            return result, None, f"Normality Test: {col}"
+
+        if analysis_type == "vif":
+            from statsmodels.stats.outliers_influence import variance_inflation_factor
+            num = df.select_dtypes(include="number").dropna()
+            if num.shape[1] < 2:
+                return {"error": "VIF needs ≥2 numeric columns."}, None, ""
+            num = num.assign(__const=1.0)
+            vif_data = {
+                col: round(float(variance_inflation_factor(num.values, i)), 2)
+                for i, col in enumerate(num.columns) if col != "__const"
+            }
+            vif_series = pd.Series(vif_data).sort_values(ascending=False)
+            high_vif = vif_series[vif_series > 10].index.tolist()
+            result = {
+                "vif": vif_data,
+                "high_vif_columns": high_vif,
+                "recommendation": (
+                    f"High multicollinearity detected in {high_vif}. "
+                    "Consider drop_correlated or PCA." if high_vif
+                    else "No severe multicollinearity detected (VIF ≤ 10 for all features)."
+                ),
+            }
+            fig = px.bar(
+                x=vif_series.index.tolist(), y=vif_series.values.tolist(),
+                title=f"Variance Inflation Factor — {dataset_name}",
+                labels={"x": "Feature", "y": "VIF"}, template="plotly_white",
+            )
+            fig.add_hline(y=10, line_dash="dash", line_color="red", annotation_text="VIF=10 threshold")
+            return result, fig, "VIF (Multicollinearity)"
+
+        if analysis_type == "outlier_summary":
+            import scipy.stats as sp_stats
+            num = df.select_dtypes(include="number")
+            if num.empty:
+                return {"error": "No numeric columns for outlier summary."}, None, ""
+            rows = []
+            for col in num.columns:
+                s = num[col].dropna()
+                if len(s) == 0:
+                    continue
+                q1, q3 = float(s.quantile(0.25)), float(s.quantile(0.75))
+                iqr = q3 - q1
+                iqr_outliers = int(((s < q1 - 1.5 * iqr) | (s > q3 + 1.5 * iqr)).sum())
+                z = (s - s.mean()) / (s.std() + 1e-12)
+                z_outliers = int((z.abs() > 3).sum())
+                rows.append({
+                    "column": col, "iqr_outliers": iqr_outliers,
+                    "zscore_outliers": z_outliers, "total": len(s),
+                    "iqr_pct": round(100 * iqr_outliers / len(s), 1),
+                })
+            result = {"outlier_summary": rows, "n_columns": len(rows)}
+            return result, None, "Outlier Summary"
+
+        if analysis_type == "seasonal_decompose":
+            col = params.get("column")
+            time_col = params.get("time_column")
+            period = params.get("period")
+            model = params.get("model", "additive")
+            if not col or col not in df.columns:
+                return {"error": f"params.column required. Available: {list(df.columns)[:20]}"}, None, ""
+            if time_col and time_col in df.columns:
+                work = df.sort_values(time_col).copy()
+            else:
+                work = df.copy()
+            series = work[col].dropna()
+            if len(series) < 4:
+                return {"error": "Need ≥4 observations for seasonal decomposition."}, None, ""
+            if period is None:
+                period = min(12, len(series) // 2)
+            try:
+                from statsmodels.tsa.seasonal import seasonal_decompose as _sd
+                decomp = _sd(series, model=model, period=int(period), extrapolate_trend="freq")
+            except Exception as exc:
+                return {"error": f"seasonal_decompose failed: {exc}"}, None, ""
+
+            trend_vals = decomp.trend.dropna().values.tolist()
+            seasonal_vals = decomp.seasonal.values.tolist()
+            residual_vals = decomp.resid.dropna().values.tolist()
+
+            import numpy as _np
+            seasonal_strength = (
+                float(_np.var(seasonal_vals) / (_np.var(seasonal_vals) + _np.var(residual_vals) + 1e-12))
+                if residual_vals else 0.0
+            )
+            result = {
+                "column": col, "model": model, "period": int(period),
+                "seasonal_strength": round(seasonal_strength, 4),
+                "has_strong_seasonality": seasonal_strength > 0.3,
+                "recommendation": (
+                    f"Strong seasonality detected (strength={seasonal_strength:.2f}). "
+                    "Use Fourier features, lag features at multiples of the period, "
+                    "and ensure the Modeling Agent uses time_column for chronological split."
+                    if seasonal_strength > 0.3 else
+                    "Seasonality is weak — standard lag/rolling features may suffice."
+                ),
+            }
+            fig = go.Figure()
+            x_axis = list(range(len(series)))
+            fig.add_trace(go.Scatter(x=x_axis, y=series.values.tolist(), name="Observed", mode="lines"))
+            fig.add_trace(go.Scatter(x=list(range(len(decomp.trend.dropna()))), y=trend_vals, name="Trend", mode="lines"))
+            fig.add_trace(go.Scatter(x=x_axis, y=seasonal_vals, name="Seasonal", mode="lines"))
+            fig.add_trace(go.Scatter(x=list(range(len(decomp.resid.dropna()))), y=residual_vals, name="Residual", mode="lines"))
+            fig.update_layout(title=f"Seasonal Decomposition: {col} (period={period})", template="plotly_white")
+            return result, fig, f"Seasonal Decomposition: {col}"
+
+        if analysis_type == "stationarity_test":
+            col = params.get("column")
+            if not col or col not in df.columns:
+                return {"error": f"params.column required. Available: {list(df.columns)[:20]}"}, None, ""
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                return {"error": f"Column '{col}' must be numeric."}, None, ""
+            series = df[col].dropna()
+            if len(series) < 8:
+                return {"error": "Need ≥8 observations for stationarity tests."}, None, ""
+            try:
+                from statsmodels.tsa.stattools import adfuller, kpss
+                adf_stat, adf_p, adf_lags, _, adf_cv, _ = adfuller(series, autolag="AIC")
+                try:
+                    kpss_stat, kpss_p, kpss_lags, kpss_cv = kpss(series, regression="c", nlags="auto")
+                    kpss_info = {
+                        "kpss_stat": round(float(kpss_stat), 4),
+                        "kpss_p": round(float(kpss_p), 4),
+                        "kpss_is_stationary": bool(kpss_p > 0.05),
+                    }
+                except Exception:
+                    kpss_info = {}
+                result = {
+                    "column": col,
+                    "adf_stat": round(float(adf_stat), 4),
+                    "adf_p": round(float(adf_p), 6),
+                    "adf_is_stationary": bool(adf_p < 0.05),
+                    **kpss_info,
+                }
+                adf_stat_flag = result["adf_is_stationary"]
+                kpss_stat_flag = kpss_info.get("kpss_is_stationary", True)
+                if adf_stat_flag and kpss_stat_flag:
+                    verdict = "Stationary (both ADF and KPSS agree). No differencing needed."
+                elif not adf_stat_flag and not kpss_stat_flag:
+                    verdict = "Non-stationary. Consider differencing or using dense_panel + lags."
+                else:
+                    verdict = "Conflicting results — possibly trend-stationary. Inspect the line chart."
+                result["verdict"] = verdict
+            except Exception as exc:
+                return {"error": f"Stationarity test failed: {exc}"}, None, ""
+            return result, None, f"Stationarity Test: {col}"
+
+        if analysis_type == "acf_pacf":
+            col = params.get("column")
+            if not col or col not in df.columns:
+                return {"error": f"params.column required. Available: {list(df.columns)[:20]}"}, None, ""
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                return {"error": f"Column '{col}' must be numeric."}, None, ""
+            series = df[col].dropna()
+            if len(series) < 4:
+                return {"error": "Need ≥4 observations for ACF/PACF."}, None, ""
+            nlags = min(int(params.get("nlags", 40)), len(series) // 2 - 1)
+            nlags = max(nlags, 1)
+            try:
+                from statsmodels.tsa.stattools import acf, pacf
+                acf_vals = acf(series, nlags=nlags, fft=True).tolist()
+                pacf_vals = pacf(series, nlags=nlags, method="ols").tolist()
+            except Exception as exc:
+                return {"error": f"ACF/PACF failed: {exc}"}, None, ""
+            conf = 1.96 / (len(series) ** 0.5)
+            significant_acf = [i for i, v in enumerate(acf_vals[1:], 1) if abs(v) > conf]
+            significant_pacf = [i for i, v in enumerate(pacf_vals[1:], 1) if abs(v) > conf]
+            result = {
+                "column": col, "nlags": nlags,
+                "acf": [round(v, 4) for v in acf_vals],
+                "pacf": [round(v, 4) for v in pacf_vals],
+                "significant_acf_lags": significant_acf[:12],
+                "significant_pacf_lags": significant_pacf[:12],
+                "confidence_interval": round(conf, 4),
+                "recommendation": (
+                    f"Significant ACF lags: {significant_acf[:6]}. "
+                    f"Significant PACF lags: {significant_pacf[:6]}. "
+                    "Include these as lag features. PACF cut-off suggests AR order."
+                ),
+            }
+            lags = list(range(len(acf_vals)))
+            fig = go.Figure()
+            fig.add_bar(x=lags, y=acf_vals, name="ACF", marker_color="steelblue")
+            fig.add_trace(go.Scatter(x=lags, y=[conf] * len(lags), mode="lines",
+                                     line=dict(dash="dash", color="red"), name="95% CI"))
+            fig.add_trace(go.Scatter(x=lags, y=[-conf] * len(lags), mode="lines",
+                                     line=dict(dash="dash", color="red"), showlegend=False))
+            fig.update_layout(title=f"ACF/PACF: {col}", template="plotly_white",
+                              xaxis_title="Lag", yaxis_title="Correlation")
+            return result, fig, f"ACF/PACF: {col}"
+
+        return {"error": f"Unknown analysis_type: {analysis_type}"}, None, ""
+    except Exception as exc:
+        log.exception("_run_analysis | exception analysis_type=%r dataset=%s", analysis_type, dataset_name)
+        return {"error": f"Analysis error: {exc}"}, None, ""

@@ -30,17 +30,33 @@ You will see one or more training runs in the notebook. For EACH run:
      • groupby_aggregate  – materialise summary targets (e.g. monthly
        order count) when the raw target is too sparse / noisy.
      • drop_high_missing  – cull cols with > 50 % missing.
+     • drop_constant      – remove zero-variance columns.
+     • drop_correlated    – remove one of each highly-correlated pair.
      • encode_dates       – year/month/day/dayofweek/quarter features.
+     • cyclical_encode    – sin/cos for cyclic fields (month, hour, dow).
+     • fourier_features   – seasonal harmonics for periodic columns.
      • log_transform      – log1p numeric features with long tails.
      • target_log_transform – log1p a right-skewed regression target.
+     • robust_scale / power_transform – stabilise scale for SVM/MLP.
      • one_hot_encode     – low-cardinality categoricals.
+     • ordinal_encode     – ordered categoricals.
+     • target_encode      – high-cardinality categoricals (smooth mean).
+     • hash_encode        – very-high-cardinality cols (IDs, free text tokens).
      • bin_numeric        – quantile bin a noisy continuous feature.
      • interaction_features – multiply two numeric cols when joint
        signal is suspected.
      • polynomial_features – squared/cubed terms for non-linearity.
-     • filter_outliers    – IQR trim before fitting linear models.
+     • filter_outliers / winsorize / zscore_outlier_removal – clean outliers.
+     • impute_missing / knn_impute / iterative_impute – fix missingness.
+     • add_missing_indicators – flag was-missing for tree models.
      • drop_columns       – remove a leakage-suspect column and retrain.
-   The Modeling Agent can also vary test_size or random_state.
+     • select_k_best / rfe_select / select_from_model – prune weak features.
+     • smote / smote_tomek / random_oversample – fix class imbalance.
+   The Modeling Agent can also:
+     • vary test_size or random_state.
+     • set class_weight="balanced" in train_model or cross_validate_model.
+     • call tune_hyperparameters on the best model to search for better params.
+     • call build_ensemble (voting or stacking) on the top models as a final step.
 
 3. FORMAT YOUR RECOMMENDATIONS. For each item in improvements_to_try
    write a single line in the form:

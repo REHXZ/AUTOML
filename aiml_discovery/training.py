@@ -78,6 +78,9 @@ class TrainingSettings:
     # When set the train/test split is CHRONOLOGICAL — rows are sorted by
     # this column and the last `test_size` fraction becomes the test set.
     time_column: str | None = None
+    # "balanced" → set class_weight on all classifiers that support it.
+    # Useful for imbalanced classification without resampling.
+    class_weight: str | None = None
 
 
 @dataclass(frozen=True)
@@ -225,12 +228,23 @@ def _instantiate_custom_model(spec: dict) -> tuple[str, Any] | None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _apply_class_weight(models: dict[str, Any], class_weight: str | None) -> None:
+    """Mutate classifiers in-place to apply class_weight when supported."""
+    if not class_weight or class_weight == "none":
+        return
+    for model in models.values():
+        inner = getattr(model, "estimator", model)  # unwrap CalibratedClassifierCV
+        if hasattr(inner, "class_weight"):
+            inner.class_weight = class_weight
+
+
 def _candidate_models(
     task_type: str,
     random_state: int,
     n_jobs: int,
     include_models: list[str] | None = None,
     custom_models: list[dict] | None = None,
+    class_weight: str | None = None,
 ) -> dict[str, Any]:
     """Return ordered dict of name → unfitted model instance.
 
@@ -238,6 +252,8 @@ def _candidate_models(
         this list are included. Custom models are always appended.
     custom_models: list of {"name", "class", "params"} specs. Appended after
         standard models. Failures are logged and skipped.
+    class_weight: optional "balanced" to set class_weight on all classifiers
+        that support it (LogisticRegression, RF, ET, Decision Tree, etc.).
     """
     if task_type == CLASSIFICATION:
         standard: dict[str, Any] = {
@@ -374,6 +390,10 @@ def _candidate_models(
                 name, model = result
                 standard[name] = model
 
+    # Apply class_weight to all classifiers that support it.
+    if task_type == CLASSIFICATION:
+        _apply_class_weight(standard, class_weight)
+
     return standard
 
 
@@ -461,6 +481,7 @@ def train_automl_stream(
         task_type, settings.random_state, n_jobs,
         include_models=include_models,
         custom_models=custom_models,
+        class_weight=settings.class_weight,
     )
     leaderboard: list[dict[str, Any]] = []
     fitted_models: dict[str, Pipeline] = {}

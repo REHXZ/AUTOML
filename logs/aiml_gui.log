@@ -9555,3 +9555,292 @@ Primar
 2026-05-24 23:42:21 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=titanic_modeling_ready chart_type='bar' params={'column': 'Title', 'top_n': 10}
 2026-05-24 23:42:21 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=titanic_modeling_ready chart_type='bar' params={'column': 'Title', 'top_n': 10} df_cols=['Survived', 'Pclass', 'Sex', 'Age', 'SibSp', 'Parch', 'Fare', 'Embarked', 'FamilySize', 'IsAlone', 'Title', 'Deck', 'TicketPrefix', 'TicketGroupSize', 'TicketNumeric', 'HasTicketPrefix', 'Fare_log1p', 'FarePerPerson', 'FareBin', 'AgeBin']
 2026-05-24 23:42:21 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=titanic_modeling_ready chart_type='bar' title='Bar: Title'
+2026-06-02 17:59:36 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 17:59:37 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-06-02 18:01:00 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:01:02 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-06-02 18:01:03 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:01:04 INFO     [aiml_discovery.tracing] Phoenix tracing active | project=AIML-Discovery endpoint=http://localhost:4317
+2026-06-02 18:04:59 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=0 messages=2
+2026-06-02 18:05:10 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:05:10 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'business_understanding', 'rationale': 'Frame the binary classification objective, identify the target column, and confirm the success metric context before any data work.'}
+2026-06-02 18:05:10 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | business_understanding → business_understanding rationale='Frame the binary classification objective, identify the target column, and confirm the success metric context before any'
+2026-06-02 18:05:10 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=1 messages=4
+2026-06-02 18:05:22 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:05:22 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=record_observation args_preview={'text': 'Problem statement: predict whether each passenger was transported to an alternate dimension (binary classification) using personal records from the Spaceship Titanic dataset. Likely target is `Transported`; unit of prediction is per passenger row; primary success metric in this competition
+2026-06-02 18:05:22 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=2 messages=6
+2026-06-02 18:05:37 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:05:37 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'data_understanding', 'rationale': 'Inspect train/test structure, missingness, leakage candidates, and target balance to form an EDA-driven hypothesis.'}
+2026-06-02 18:05:37 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | business_understanding → data_understanding rationale='Inspect train/test structure, missingness, leakage candidates, and target balance to form an EDA-driven hypothesis.'
+2026-06-02 18:05:37 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=3 messages=8
+2026-06-02 18:05:49 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:05:49 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=delegate_to_eda args_preview={'instructions': 'Profile the train and test datasets for the Spaceship Titanic classification task. Focus on: target balance in train (`Transported`), column types, missingness rates, cardinality, suspicious leakage candidates, duplicated rows, and basic distribution checks for numeric features. Pr
+2026-06-02 18:05:49 INFO     [aiml_discovery.agents.scientist] Scientist delegating → EDA Agent
+2026-06-02 18:05:49 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=0 messages=2
+2026-06-02 18:05:56 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:05:56 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=profile_dataset args={"dataset_id":"dataset_20260602_100429_312929"}
+2026-06-02 18:05:56 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=profile_dataset content_len=3595
+2026-06-02 18:05:56 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=1 messages=4
+2026-06-02 18:06:06 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:06:06 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=profile_dataset args={"dataset_id":"dataset_20260602_100434_701519"}
+2026-06-02 18:06:06 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=profile_dataset content_len=3407
+2026-06-02 18:06:06 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=2 messages=6
+2026-06-02 18:06:17 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:06:17 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"bar","params":{"column":"Transported","top_n":2}}
+2026-06-02 18:06:17 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='bar' params={'column': 'Transported', 'top_n': 2}
+2026-06-02 18:06:17 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='bar' params={'column': 'Transported', 'top_n': 2} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:06:17 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='bar' title='Bar: Transported'
+2026-06-02 18:06:18 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=20098 b64_chars=26800
+2026-06-02 18:06:18 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:06:18 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:06:18 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=3 messages=8
+2026-06-02 18:06:27 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:06:27 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"histogram","params":{"column":"Age","bins":20}}
+2026-06-02 18:06:27 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='histogram' params={'column': 'Age', 'bins': 20}
+2026-06-02 18:06:27 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='histogram' params={'column': 'Age', 'bins': 20} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:06:27 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='histogram' title='Histogram: Age'
+2026-06-02 18:06:28 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=20070 b64_chars=26760
+2026-06-02 18:06:28 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:06:28 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:06:28 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=4 messages=10
+2026-06-02 18:06:42 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:06:42 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260602_100429_312929", "chart_type": "histogram", "params": {"column": "RoomService", "bins": 30}}
+2026-06-02 18:06:42 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='histogram' params={'column': 'RoomService', 'bins': 30}
+2026-06-02 18:06:42 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='histogram' params={'column': 'RoomService', 'bins': 30} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:06:42 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='histogram' title='Histogram: RoomService'
+2026-06-02 18:06:43 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=22141 b64_chars=29524
+2026-06-02 18:06:43 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:06:43 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:06:43 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260602_100429_312929", "chart_type": "histogram", "params": {"column": "FoodCourt", "bins": 30}}
+2026-06-02 18:06:43 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='histogram' params={'column': 'FoodCourt', 'bins': 30}
+2026-06-02 18:06:43 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='histogram' params={'column': 'FoodCourt', 'bins': 30} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:06:43 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='histogram' title='Histogram: FoodCourt'
+2026-06-02 18:06:44 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=22344 b64_chars=29792
+2026-06-02 18:06:44 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:06:44 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:06:44 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260602_100429_312929", "chart_type": "histogram", "params": {"column": "ShoppingMall", "bins": 30}}
+2026-06-02 18:06:44 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='histogram' params={'column': 'ShoppingMall', 'bins': 30}
+2026-06-02 18:06:44 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='histogram' params={'column': 'ShoppingMall', 'bins': 30} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:06:44 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='histogram' title='Histogram: ShoppingMall'
+2026-06-02 18:06:46 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=19753 b64_chars=26340
+2026-06-02 18:06:46 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:06:46 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:06:46 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260602_100429_312929", "chart_type": "histogram", "params": {"column": "Spa", "bins": 30}}
+2026-06-02 18:06:46 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='histogram' params={'column': 'Spa', 'bins': 30}
+2026-06-02 18:06:46 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='histogram' params={'column': 'Spa', 'bins': 30} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:06:46 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='histogram' title='Histogram: Spa'
+2026-06-02 18:06:47 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=20875 b64_chars=27836
+2026-06-02 18:06:47 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:06:47 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:06:47 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id": "dataset_20260602_100429_312929", "chart_type": "histogram", "params": {"column": "VRDeck", "bins": 30}}
+2026-06-02 18:06:47 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='histogram' params={'column': 'VRDeck', 'bins': 30}
+2026-06-02 18:06:47 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='histogram' params={'column': 'VRDeck', 'bins': 30} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:06:47 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='histogram' title='Histogram: VRDeck'
+2026-06-02 18:06:48 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=21733 b64_chars=28980
+2026-06-02 18:06:48 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:06:48 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:06:48 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=5 messages=16
+2026-06-02 18:07:01 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:07:01 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"bar","params":{"column":"HomePlanet","top_n":10}}
+2026-06-02 18:07:01 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='bar' params={'column': 'HomePlanet', 'top_n': 10}
+2026-06-02 18:07:01 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='bar' params={'column': 'HomePlanet', 'top_n': 10} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:07:01 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='bar' title='Bar: HomePlanet'
+2026-06-02 18:07:02 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=20678 b64_chars=27572
+2026-06-02 18:07:02 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:07:02 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:07:02 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=6 messages=18
+2026-06-02 18:07:15 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:07:15 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"bar","params":{"column":"Destination","top_n":10}}
+2026-06-02 18:07:15 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='bar' params={'column': 'Destination', 'top_n': 10}
+2026-06-02 18:07:15 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='bar' params={'column': 'Destination', 'top_n': 10} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:07:15 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='bar' title='Bar: Destination'
+2026-06-02 18:07:16 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=23554 b64_chars=31408
+2026-06-02 18:07:16 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:07:16 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:07:16 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=7 messages=20
+2026-06-02 18:07:29 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:07:29 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"bar","params":{"column":"Cabin","top_n":10}}
+2026-06-02 18:07:29 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='bar' params={'column': 'Cabin', 'top_n': 10}
+2026-06-02 18:07:29 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='bar' params={'column': 'Cabin', 'top_n': 10} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:07:29 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='bar' title='Bar: Cabin'
+2026-06-02 18:07:30 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=23287 b64_chars=31052
+2026-06-02 18:07:30 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:07:30 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:07:30 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=8 messages=22
+2026-06-02 18:07:42 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:07:42 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"bar","params":{"column":"Name","top_n":10}}
+2026-06-02 18:07:42 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='bar' params={'column': 'Name', 'top_n': 10}
+2026-06-02 18:07:42 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='bar' params={'column': 'Name', 'top_n': 10} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:07:42 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='bar' title='Bar: Name'
+2026-06-02 18:07:43 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=40869 b64_chars=54492
+2026-06-02 18:07:43 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:07:43 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:07:43 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=9 messages=24
+2026-06-02 18:07:53 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:07:53 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"missing_heatmap","params":{}}
+2026-06-02 18:07:53 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='missing_heatmap' params={}
+2026-06-02 18:07:53 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='missing_heatmap' params={} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:07:53 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='missing_heatmap' title='Missing Heatmap'
+2026-06-02 18:07:54 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=33023 b64_chars=44032
+2026-06-02 18:07:54 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:07:54 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:07:54 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=10 messages=26
+2026-06-02 18:08:07 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:08:07 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"correlation_heatmap","params":{}}
+2026-06-02 18:08:07 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='correlation_heatmap' params={}
+2026-06-02 18:08:07 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='correlation_heatmap' params={} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:08:07 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='correlation_heatmap' title='Correlation Heatmap'
+2026-06-02 18:08:08 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=46817 b64_chars=62424
+2026-06-02 18:08:08 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:08:08 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:08:08 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=11 messages=28
+2026-06-02 18:08:22 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:08:22 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"scatter","params":{"x_column":"Age","y_column":"RoomService","color_column":"Transported"}}
+2026-06-02 18:08:22 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='scatter' params={'x_column': 'Age', 'y_column': 'RoomService', 'color_column': 'Transported'}
+2026-06-02 18:08:22 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='scatter' params={'x_column': 'Age', 'y_column': 'RoomService', 'color_column': 'Transported'} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:08:22 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='scatter' title='Scatter: Age vs RoomService'
+2026-06-02 18:08:23 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=66302 b64_chars=88404
+2026-06-02 18:08:23 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:08:23 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:08:23 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=12 messages=30
+2026-06-02 18:08:36 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:08:36 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=create_chart args={"dataset_id":"dataset_20260602_100429_312929","chart_type":"box","params":{"column":"Age","group_by":"Transported"}}
+2026-06-02 18:08:36 INFO     [aiml_discovery.agents.eda_agent] create_chart | dataset=train chart_type='box' params={'column': 'Age', 'group_by': 'Transported'}
+2026-06-02 18:08:36 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=train chart_type='box' params={'column': 'Age', 'group_by': 'Transported'} df_cols=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'Transported']
+2026-06-02 18:08:36 INFO     [aiml_discovery.agents.eda_agent] create_chart | OK dataset=train chart_type='box' title='Box: Age by Transported'
+2026-06-02 18:08:37 DEBUG    [aiml_discovery.agents.base] fig_to_base64 | OK png_bytes=18985 b64_chars=25316
+2026-06-02 18:08:37 DEBUG    [aiml_discovery.agents.base] vision_tool_content | returning vision+text content
+2026-06-02 18:08:37 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=create_chart content=vision+text parts=2
+2026-06-02 18:08:37 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=13 messages=32
+2026-06-02 18:08:51 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:08:51 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=record_finding args={"text":"- Train target Transported is roughly balanced, so no major class-imbalance treatment is needed.\n- Missingness is low and fairly uniform (~2% per feature), with no duplicate rows in train/test.\n- Spending features (RoomService/FoodCourt/ShoppingMall/Spa/VRDeck) are highly zero-inflated and heavy-tailed; consider log1p and binary spend flags.\n- Cabin looks highly informative only after splitting into deck/number/side; raw Cabin is high-cardinality.\n- Name is nearly unique; raw text likely low value, but surname extraction may help capture family/group effects.\n- Age has moderate s
+2026-06-02 18:08:51 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=record_finding content_len=38
+2026-06-02 18:08:51 DEBUG    [aiml_discovery.agents.base] LLM call | agent=eda model=gpt-5.4-mini iteration=14 messages=34
+2026-06-02 18:09:06 DEBUG    [aiml_discovery.agents.base] LLM response | agent=eda finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:09:06 INFO     [aiml_discovery.agents.base] tool_call | agent=eda name=done args={"candidate_targets":["Transported"],"problematic_columns":["PassengerId (identifier, needs parsing for group id)","Cabin (high-cardinality raw string; split into deck/number/side)","Name (near-unique raw text; extract surname only if useful)","RoomService","FoodCourt","ShoppingMall","Spa","VRDeck (zero-inflated, heavy-tailed)"],"recommended_transformations":["Impute low missingness with simple strategies or category 'missing'","Parse Cabin into deck, number, side","Parse PassengerId into group and family-size proxies","Apply log1p to spending columns and/or create binary any-spend flags","Con
+2026-06-02 18:09:06 DEBUG    [aiml_discovery.agents.base] tool_result | agent=eda name=done content_len=19
+2026-06-02 18:09:06 INFO     [aiml_discovery.agents.scientist] EDA Agent returned | summary_keys=['candidate_targets', 'problematic_columns', 'recommended_transformations', 'suspected_leakage', 'next_moves', 'narrative']
+2026-06-02 18:09:06 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=4 messages=10
+2026-06-02 18:09:13 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:09:13 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=record_observation args_preview={'text': 'EDA hypothesis: the strongest signal will likely come from structured voyage/context variables and engineered group/cabin features rather than raw numeric spend columns alone. Spending variables are sparse and heavy-tailed, so a model that handles nonlinearities and missingness well should
+2026-06-02 18:09:13 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=5 messages=12
+2026-06-02 18:09:23 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:09:23 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'data_preparation', 'rationale': 'Create modelling-ready features by splitting identifiers and cabins, adding spend summaries, and imputing missing values.'}
+2026-06-02 18:09:23 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | data_understanding → data_preparation rationale='Create modelling-ready features by splitting identifiers and cabins, adding spend summaries, and imputing missing values'
+2026-06-02 18:09:23 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=6 messages=14
+2026-06-02 18:09:36 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:09:36 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=delegate_to_feature_engineering args_preview={'instructions': 'Create modelling-ready datasets from train and test for the Spaceship Titanic task. Please generate cleaned/derived features rather than relying on the modeling tool to preprocess. Use the source train dataset id=dataset_20260602_100429_312929 and test dataset id=dataset_20260602_1
+2026-06-02 18:09:36 INFO     [aiml_discovery.agents.scientist] Scientist delegating → Feature Engineering Agent
+2026-06-02 18:09:36 DEBUG    [aiml_discovery.agents.base] LLM call | agent=feature_engineering model=gpt-5.4-mini iteration=0 messages=2
+2026-06-02 18:09:52 DEBUG    [aiml_discovery.agents.base] LLM response | agent=feature_engineering finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:09:52 INFO     [aiml_discovery.agents.base] tool_call | agent=feature_engineering name=create_derived_dataset args={"source_dataset_id": "dataset_20260602_100429_312929", "new_name": "train_spaceship_ready", "operation": "execute_python", "params": {"code": "df = df.copy()\n# Parse PassengerId\npid = df['PassengerId'].astype(str).str.split('_', expand=True)\ndf['GroupId'] = pid[0]\ndf['PassengerNum'] = pd.to_numeric(pid[1], errors='coerce')\n\n# Split Cabin\ncabin = df['Cabin'].astype(str).str.split('/', expand=True)\ndf['CabinDeck'] = cabin[0].replace('nan', np.nan)\ndf['CabinNum'] = pd.to_numeric(cabin[1], errors='coerce')\ndf['CabinSide'] = cabin[2].replace('nan', np.nan)\n\n# Surname from Name\nsurname
+2026-06-02 18:09:52 INFO     [aiml_discovery.agents.feature_engineering_agent] create_derived | source=train operation=execute_python params={'code': "df = df.copy()\n# Parse PassengerId\npid = df['PassengerId'].astype(str).str.split('_', expand=True)\ndf['GroupId'] = pid[0]\ndf['PassengerNum'] = pd.to_numeric(pid[1], errors='coerce')\n\n# Split Cabin\ncabin = df['Cabin'].astype(str).str.split('/', expand=True)\ndf['CabinDeck'] = cabin[0].replace('nan', np.nan)\ndf['CabinNum'] = pd.to_numeric(cabin[1], errors='coerce')\ndf['CabinSide'] = cabin[2].replace('nan', np.nan)\n\n# Surname from Name\nsurname = df['Name'].astype(str).str.split(' ', n=1).str[1]\ndf['Surname'] = surname.replace({'nan': np.nan})\n\n# Spend features\nspend_cols = ['RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck']\ndf['TotalSpend'] = df[spend_cols].sum(axis=1, skipna=True)\ndf['AnySpend'] = (df[spend_cols].fillna(0).sum(axis=1) > 0).astype(int)\nfor c in spend_cols + ['TotalSpend']:\n    df[f'{c}_log1p'] = np.log1p(df[c].fillna(0))\n\n# Family/group size proxies\nif 'GroupId' in df.columns:\n    df['GroupSize'] = df.groupby('GroupId')['PassengerId'].transform('size')\nif 'Surname' in df.columns:\n    df['SurnameGroupSize'] = df.groupby('Surname')['PassengerId'].transform('size')\n\n# Missing handling: categorical -> 'missing', numeric -> median, bool/int flags -> 0 where needed\ncat_cols = df.select_dtypes(include=['object']).columns.tolist()\nfor c in cat_cols:\n    df[c] = df[c].fillna('missing')\n\nnum_cols = df.select_dtypes(include=[np.number]).columns.tolist()\nfor c in num_cols:\n    if df[c].isna().any():\n        df[c] = df[c].fillna(df[c].median())\n\n# Keep raw columns; ready for encoding by downstream tools\n# Reorder target to end if present\ncols = [c for c in df.columns if c != 'Transported'] + (['Transported'] if 'Transported' in df.columns else [])\ndf = df[cols]"} new_name=train_spaceship_ready
+2026-06-02 18:09:52 INFO     [aiml_discovery.agents.feature_engineering_agent] create_derived | OK operation=execute_python new_dataset=train_spaceship_ready id=dataset_20260602_100952_700697 rows=8693 cols=30
+2026-06-02 18:09:52 DEBUG    [aiml_discovery.agents.base] tool_result | agent=feature_engineering name=create_derived_dataset content_len=174
+2026-06-02 18:09:52 INFO     [aiml_discovery.agents.base] tool_call | agent=feature_engineering name=create_derived_dataset args={"source_dataset_id": "dataset_20260602_100434_701519", "new_name": "test_spaceship_ready", "operation": "execute_python", "params": {"code": "df = df.copy()\n# Parse PassengerId\npid = df['PassengerId'].astype(str).str.split('_', expand=True)\ndf['GroupId'] = pid[0]\ndf['PassengerNum'] = pd.to_numeric(pid[1], errors='coerce')\n\n# Split Cabin\ncabin = df['Cabin'].astype(str).str.split('/', expand=True)\ndf['CabinDeck'] = cabin[0].replace('nan', np.nan)\ndf['CabinNum'] = pd.to_numeric(cabin[1], errors='coerce')\ndf['CabinSide'] = cabin[2].replace('nan', np.nan)\n\n# Surname from Name\ndf['Surn
+2026-06-02 18:09:52 INFO     [aiml_discovery.agents.feature_engineering_agent] create_derived | source=test operation=execute_python params={'code': "df = df.copy()\n# Parse PassengerId\npid = df['PassengerId'].astype(str).str.split('_', expand=True)\ndf['GroupId'] = pid[0]\ndf['PassengerNum'] = pd.to_numeric(pid[1], errors='coerce')\n\n# Split Cabin\ncabin = df['Cabin'].astype(str).str.split('/', expand=True)\ndf['CabinDeck'] = cabin[0].replace('nan', np.nan)\ndf['CabinNum'] = pd.to_numeric(cabin[1], errors='coerce')\ndf['CabinSide'] = cabin[2].replace('nan', np.nan)\n\n# Surname from Name\ndf['Surname'] = df['Name'].astype(str).str.split(' ', n=1).str[1].replace({'nan': np.nan})\n\n# Spend features\nspend_cols = ['RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck']\ndf['TotalSpend'] = df[spend_cols].sum(axis=1, skipna=True)\ndf['AnySpend'] = (df[spend_cols].fillna(0).sum(axis=1) > 0).astype(int)\nfor c in spend_cols + ['TotalSpend']:\n    df[f'{c}_log1p'] = np.log1p(df[c].fillna(0))\n\n# Family/group size proxies\nif 'GroupId' in df.columns:\n    df['GroupSize'] = df.groupby('GroupId')['PassengerId'].transform('size')\nif 'Surname' in df.columns:\n    df['SurnameGroupSize'] = df.groupby('Surname')['PassengerId'].transform('size')\n\n# Missing handling: categorical -> 'missing', numeric -> median\ncat_cols = df.select_dtypes(include=['object']).columns.tolist()\nfor c in cat_cols:\n    df[c] = df[c].fillna('missing')\n\nnum_cols = df.select_dtypes(include=[np.number]).columns.tolist()\nfor c in num_cols:\n    if df[c].isna().any():\n        df[c] = df[c].fillna(df[c].median())\n\n# Preserve raw columns; target absent in test\ncols = [c for c in df.columns if c != 'Transported']\ndf = df[cols]"} new_name=test_spaceship_ready
+2026-06-02 18:09:52 INFO     [aiml_discovery.agents.feature_engineering_agent] create_derived | OK operation=execute_python new_dataset=test_spaceship_ready id=dataset_20260602_100952_867876 rows=4277 cols=29
+2026-06-02 18:09:52 DEBUG    [aiml_discovery.agents.base] tool_result | agent=feature_engineering name=create_derived_dataset content_len=173
+2026-06-02 18:09:52 DEBUG    [aiml_discovery.agents.base] LLM call | agent=feature_engineering model=gpt-5.4-mini iteration=1 messages=5
+2026-06-02 18:10:04 DEBUG    [aiml_discovery.agents.base] LLM response | agent=feature_engineering finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:10:04 INFO     [aiml_discovery.agents.base] tool_call | agent=feature_engineering name=record_finding args={"text":"Created modelling-ready Spaceship Titanic feature sets. Added PassengerId splits (GroupId, PassengerNum), Cabin splits (CabinDeck, CabinNum, CabinSide), surname extraction, TotalSpend/AnySpend, log1p spend variants, and family/group size proxies (GroupSize, SurnameGroupSize). Imputed categorical missings as 'missing' and numeric missings with median to keep the data ready for automatic encoding. Train retains Transported; test does not."}
+2026-06-02 18:10:04 DEBUG    [aiml_discovery.agents.base] tool_result | agent=feature_engineering name=record_finding content_len=18
+2026-06-02 18:10:04 DEBUG    [aiml_discovery.agents.base] LLM call | agent=feature_engineering model=gpt-5.4-mini iteration=2 messages=7
+2026-06-02 18:10:16 DEBUG    [aiml_discovery.agents.base] LLM response | agent=feature_engineering finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:10:16 INFO     [aiml_discovery.agents.base] tool_call | agent=feature_engineering name=done args={"created_dataset_ids":["dataset_20260602_100952_700697","dataset_20260602_100952_867876"],"rationale":"Produced aligned train/test feature sets for Spaceship Titanic with the requested identifier parsing, cabin decomposition, surname and group-size signals, spend aggregation/log features, and simple missing-value handling. The train-derived dataset keeps Transported as the target; the test-derived dataset excludes it. These datasets should be ready for one-hot or automatic encoding downstream.","next_moves":["One-hot encode remaining categorical columns such as HomePlanet, Destination, CryoSl
+2026-06-02 18:10:16 DEBUG    [aiml_discovery.agents.base] tool_result | agent=feature_engineering name=done content_len=19
+2026-06-02 18:10:16 INFO     [aiml_discovery.agents.scientist] FE Agent returned | summary_keys=['created_dataset_ids', 'rationale', 'next_moves']
+2026-06-02 18:10:16 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=7 messages=16
+2026-06-02 18:10:22 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:10:22 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=record_observation args_preview={'text': 'Feature engineering succeeded with aligned train/test feature sets. We now have passenger group, cabin, surname, and spend-summarization features, which should materially improve model performance over raw columns.'}
+2026-06-02 18:10:22 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=8 messages=18
+2026-06-02 18:10:34 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:10:34 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=set_phase args_preview={'phase': 'modeling', 'rationale': 'Train a strong baseline and then run at least two review-driven fine-tuning cycles to chase improvements.'}
+2026-06-02 18:10:34 INFO     [aiml_discovery.agents.scientist] Scientist phase transition | data_preparation → modeling rationale='Train a strong baseline and then run at least two review-driven fine-tuning cycles to chase improvements.'
+2026-06-02 18:10:34 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM call | iteration=9 messages=20
+2026-06-02 18:10:45 DEBUG    [aiml_discovery.agents.scientist] Scientist LLM response | finish_reason=tool_calls has_tool_calls=True
+2026-06-02 18:10:45 INFO     [aiml_discovery.agents.scientist] Scientist tool_call | name=delegate_to_modeling args_preview={'instructions': 'Train baseline classification models on dataset_20260602_100952_700697 with target column Transported. Use the strongest practical tabular AutoML setup available. Evaluate using accuracy and F1_weighted. Make sure passenger identifier-derived features and cabin-derived features are
+2026-06-02 18:10:45 INFO     [aiml_discovery.agents.scientist] Scientist delegating → Modeling Agent
+2026-06-02 18:10:45 INFO     [aiml_discovery.agents.modeling_agent] Modeling Agent starting | instructions=Train baseline classification models on dataset_20260602_100952_700697 with target column Transported. Use the strongest practical tabular AutoML setup available. Evaluate using accuracy and F1_weight
+2026-06-02 18:10:56 INFO     [aiml_discovery.agents.modeling_agent] Modeling tool_call | name=inspect_dataset
+2026-06-02 18:10:57 INFO     [aiml_discovery.agents.modeling_agent] inspect_dataset | dataset=train_spaceship_ready rows=8693 columns(30)=['PassengerId', 'HomePlanet', 'CryoSleep', 'Cabin', 'Destination', 'Age', 'VIP', 'RoomService', 'FoodCourt', 'ShoppingMall', 'Spa', 'VRDeck', 'Name', 'GroupId', 'PassengerNum', 'CabinDeck', 'CabinNum', 'CabinSide', 'Surname', 'TotalSpend']
+2026-06-02 18:11:05 INFO     [aiml_discovery.agents.modeling_agent] Modeling tool_call | name=train_model
+2026-06-02 18:11:05 INFO     [aiml_discovery.agents.modeling_agent] train_model | dataset=train_spaceship_ready target=Transported split=random time_column=None test_size=0.20 include=['Baseline (Majority)', 'Logistic Regression', 'Ridge', 'Lasso', 'ElasticNet', 'Decision Tree', 'Random Forest', 'Extra Trees', 'Gradient Boosting', 'Hist Gradient Boosting', 'LightGBM', 'CatBoost', 'XGBoost', 'Bagging', 'AdaBoost', 'Linear Discriminant Analysis', 'Gaussian Naive Bayes', 'Linear SVC', 'SVC (RBF)', 'MLP'] custom=0
+2026-06-02 18:11:05 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=17 include=['Baseline (Majority)', 'Logistic Regression', 'Ridge', 'Lasso', 'ElasticNet', 'Decision Tree', 'Random Forest', 'Extra Trees', 'Gradient Boosting', 'Hist Gradient Boosting', 'LightGBM', 'CatBoost', 'XGBoost', 'Bagging', 'AdaBoost', 'Linear Discriminant Analysis', 'Gaussian Naive Bayes', 'Linear SVC', 'SVC (RBF)', 'MLP'] custom=0
+2026-06-02 18:15:06 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:15:06 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=21 include=all custom=0
+2026-06-02 18:15:06 WARNING  [aiml_discovery.training] model 'Quadratic Discriminant Analysis' failed: The covariance matrix of class no is not full rank. When using `solver='svd'` the number of samples in each class should be more than the number of features, but class no has 4 samples and 4 features. Try using `solver='eigen'` and setting the parameter `shrinkage` for regularization.
+2026-06-02 18:15:11 WARNING  [aiml_discovery.training] model 'XGBoost' failed: Invalid classes inferred from unique values of `y`.  Expected: [0 1], got ['no' 'yes']
+2026-06-02 18:15:12 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=classification n=3 is_ts=False
+2026-06-02 18:15:12 INFO     [aiml_discovery.training] train_automl_stream | task=regression models=22 include=all custom=0
+2026-06-02 18:15:17 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=regression n=5 is_ts=False
+2026-06-02 18:22:17 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:27:56 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:27:56 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=21 include=all custom=0
+2026-06-02 18:27:56 WARNING  [aiml_discovery.training] model 'Quadratic Discriminant Analysis' failed: The covariance matrix of class no is not full rank. When using `solver='svd'` the number of samples in each class should be more than the number of features, but class no has 4 samples and 4 features. Try using `solver='eigen'` and setting the parameter `shrinkage` for regularization.
+2026-06-02 18:28:01 WARNING  [aiml_discovery.training] model 'XGBoost' failed: Invalid classes inferred from unique values of `y`.  Expected: [0 1], got ['no' 'yes']
+2026-06-02 18:28:01 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=classification n=3 is_ts=False
+2026-06-02 18:28:01 INFO     [aiml_discovery.training] train_automl_stream | task=regression models=22 include=all custom=0
+2026-06-02 18:28:07 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=regression n=5 is_ts=False
+2026-06-02 18:29:13 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:29:16 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='line' params={'x_column': 'date', 'y_column': 'value'} df_cols=['date', 'value', 'group', 'date_str']
+2026-06-02 18:29:16 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='qq_plot' params={'column': 'a'} df_cols=['a', 'b', 'c', 'cat', 'target']
+2026-06-02 18:29:32 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:29:50 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:29:53 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='line' params={'x_column': 'date', 'y_column': 'value'} df_cols=['date', 'value', 'group', 'date_str']
+2026-06-02 18:29:53 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='qq_plot' params={'column': 'a'} df_cols=['a', 'b', 'c', 'cat', 'target']
+2026-06-02 18:29:55 INFO     [aiml_discovery.agents.modeling_agent] cross_validate | model=Random Forest scoring=f1_weighted mean=0.9852 std=0.0210
+2026-06-02 18:29:57 INFO     [aiml_discovery.agents.modeling_agent] tune_hyperparameters | model=Random Forest best_score=0.9417 best_params={'model__n_estimators': 200, 'model__min_samples_leaf': 2, 'model__max_depth': 5}
+2026-06-02 18:30:04 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:30:07 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='line' params={'x_column': 'date', 'y_column': 'value'} df_cols=['date', 'value', 'group', 'date_str']
+2026-06-02 18:30:07 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='qq_plot' params={'column': 'a'} df_cols=['a', 'b', 'c', 'cat', 'target']
+2026-06-02 18:30:10 INFO     [aiml_discovery.agents.modeling_agent] cross_validate | model=Random Forest scoring=f1_weighted mean=0.8804 std=0.0816
+2026-06-02 18:30:12 INFO     [aiml_discovery.agents.modeling_agent] tune_hyperparameters | model=Random Forest best_score=0.9410 best_params={'model__n_estimators': 300, 'model__min_samples_leaf': 5, 'model__max_depth': 20}
+2026-06-02 18:30:12 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=21 include=all custom=0
+2026-06-02 18:30:12 WARNING  [aiml_discovery.training] model 'Quadratic Discriminant Analysis' failed: The covariance matrix of class no is not full rank. When using `solver='svd'` the number of samples in each class should be more than the number of features, but class no has 4 samples and 4 features. Try using `solver='eigen'` and setting the parameter `shrinkage` for regularization.
+2026-06-02 18:30:17 WARNING  [aiml_discovery.training] model 'XGBoost' failed: Invalid classes inferred from unique values of `y`.  Expected: [0 1], got ['no' 'yes']
+2026-06-02 18:30:18 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=classification n=3 is_ts=False
+2026-06-02 18:30:18 INFO     [aiml_discovery.training] train_automl_stream | task=regression models=22 include=all custom=0
+2026-06-02 18:30:24 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=regression n=5 is_ts=False
+2026-06-02 18:31:45 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:31:49 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='line' params={'x_column': 'date', 'y_column': 'value'} df_cols=['date', 'value', 'group', 'date_str']
+2026-06-02 18:31:49 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='qq_plot' params={'column': 'a'} df_cols=['a', 'b', 'c', 'cat', 'target']
+2026-06-02 18:31:51 INFO     [aiml_discovery.agents.modeling_agent] cross_validate | model=Random Forest scoring=f1_weighted mean=0.9420 std=0.0410
+2026-06-02 18:31:53 INFO     [aiml_discovery.agents.modeling_agent] tune_hyperparameters | model=Random Forest best_score=0.9154 best_params={'model__n_estimators': 300, 'model__min_samples_leaf': 5, 'model__max_depth': 20}
+2026-06-02 18:31:53 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=21 include=all custom=0
+2026-06-02 18:31:53 WARNING  [aiml_discovery.training] model 'Quadratic Discriminant Analysis' failed: The covariance matrix of class no is not full rank. When using `solver='svd'` the number of samples in each class should be more than the number of features, but class no has 4 samples and 4 features. Try using `solver='eigen'` and setting the parameter `shrinkage` for regularization.
+2026-06-02 18:31:58 WARNING  [aiml_discovery.training] model 'XGBoost' failed: Invalid classes inferred from unique values of `y`.  Expected: [0 1], got ['no' 'yes']
+2026-06-02 18:31:58 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=classification n=3 is_ts=False
+2026-06-02 18:31:58 INFO     [aiml_discovery.training] train_automl_stream | task=regression models=22 include=all custom=0
+2026-06-02 18:32:04 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=regression n=5 is_ts=False
+2026-06-02 18:51:59 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:52:03 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='line' params={'x_column': 'date', 'y_column': 'value'} df_cols=['date', 'value', 'group', 'date_str']
+2026-06-02 18:52:03 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='qq_plot' params={'column': 'a'} df_cols=['a', 'b', 'c', 'cat', 'target']
+2026-06-02 18:52:05 INFO     [aiml_discovery.agents.modeling_agent] cross_validate | model=Random Forest scoring=f1_weighted mean=0.9271 std=0.0552
+2026-06-02 18:52:07 INFO     [aiml_discovery.agents.modeling_agent] tune_hyperparameters | model=Random Forest best_score=0.8854 best_params={'model__n_estimators': 300, 'model__min_samples_leaf': 5, 'model__max_depth': 20}
+2026-06-02 18:52:07 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=21 include=all custom=0
+2026-06-02 18:52:07 WARNING  [aiml_discovery.training] model 'Quadratic Discriminant Analysis' failed: The covariance matrix of class no is not full rank. When using `solver='svd'` the number of samples in each class should be more than the number of features, but class no has 4 samples and 4 features. Try using `solver='eigen'` and setting the parameter `shrinkage` for regularization.
+2026-06-02 18:52:13 WARNING  [aiml_discovery.training] model 'XGBoost' failed: Invalid classes inferred from unique values of `y`.  Expected: [0 1], got ['no' 'yes']
+2026-06-02 18:52:13 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=classification n=3 is_ts=False
+2026-06-02 18:52:13 INFO     [aiml_discovery.training] train_automl_stream | task=regression models=22 include=all custom=0
+2026-06-02 18:52:18 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=regression n=5 is_ts=False
+2026-06-02 18:52:52 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:52:53 INFO     [aiml_discovery.agents.modeling_agent] build_ensemble | OK type=voting task=classification metrics=accuracy=1.0000, f1_weighted=1.0000, precision_weighted=1.0000, recall_weighted=1.0000, roc_auc=1.0000
+2026-06-02 18:53:07 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:53:08 INFO     [aiml_discovery.agents.modeling_agent] build_ensemble | OK type=voting task=classification metrics=accuracy=1.0000, f1_weighted=1.0000, precision_weighted=1.0000, recall_weighted=1.0000, roc_auc=1.0000
+2026-06-02 18:53:08 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=2 include=['Random Forest', 'Logistic Regression'] custom=0
+2026-06-02 18:53:08 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=classification n=25 is_ts=False
+2026-06-02 18:53:15 DEBUG    [aiml_discovery] File logging active → C:\Users\REHXX\OneDrive\Documents\GitHub\AIML-GUI\logs\aiml_gui.log
+2026-06-02 18:53:18 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='line' params={'x_column': 'date', 'y_column': 'value'} df_cols=['date', 'value', 'group', 'date_str']
+2026-06-02 18:53:18 DEBUG    [aiml_discovery.agents.eda_agent] _build_figure | dataset=test chart_type='qq_plot' params={'column': 'a'} df_cols=['a', 'b', 'c', 'cat', 'target']
+2026-06-02 18:53:20 INFO     [aiml_discovery.agents.modeling_agent] cross_validate | model=Random Forest scoring=f1_weighted mean=0.9576 std=0.0016
+2026-06-02 18:53:22 INFO     [aiml_discovery.agents.modeling_agent] tune_hyperparameters | model=Random Forest best_score=0.9139 best_params={'model__n_estimators': 300, 'model__min_samples_leaf': 5, 'model__max_depth': 20}
+2026-06-02 18:53:22 INFO     [aiml_discovery.agents.modeling_agent] build_ensemble | OK type=voting task=classification metrics=accuracy=0.9286, f1_weighted=0.9181, precision_weighted=0.9341, recall_weighted=0.9286, roc_auc=0.8750
+2026-06-02 18:53:22 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=2 include=['Random Forest', 'Logistic Regression'] custom=0
+2026-06-02 18:53:22 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=classification n=25 is_ts=False
+2026-06-02 18:53:23 INFO     [aiml_discovery.training] train_automl_stream | task=classification models=21 include=all custom=0
+2026-06-02 18:53:23 WARNING  [aiml_discovery.training] model 'Quadratic Discriminant Analysis' failed: The covariance matrix of class no is not full rank. When using `solver='svd'` the number of samples in each class should be more than the number of features, but class no has 4 samples and 4 features. Try using `solver='eigen'` and setting the parameter `shrinkage` for regularization.
+2026-06-02 18:53:28 WARNING  [aiml_discovery.training] model 'XGBoost' failed: Invalid classes inferred from unique values of `y`.  Expected: [0 1], got ['no' 'yes']
+2026-06-02 18:53:28 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=classification n=3 is_ts=False
+2026-06-02 18:53:28 INFO     [aiml_discovery.training] train_automl_stream | task=regression models=22 include=all custom=0
+2026-06-02 18:53:34 DEBUG    [aiml_discovery.diagnostics] build_diagnostics_dict | task=regression n=5 is_ts=False

@@ -21,24 +21,45 @@ log = logging.getLogger(__name__)
 # tool args instead of nested under "params". We auto-promote them to params
 # (with a WARNING) so the operation still runs.
 _FE_PARAM_KEYS = frozenset({
-    "threshold",          # drop_high_missing
-    "columns",            # select/drop_columns, one_hot_encode, log_transform, polynomial_features
+    "threshold",          # drop_high_missing, drop_correlated, select_from_model, zscore
+    "columns",            # select/drop_columns, one_hot_encode, log_transform, polynomial_features, scalers, encoders
     "max_unique",         # one_hot_encode
-    "column",             # bin_numeric, target_log_transform, lag/lead/rolling
+    "column",             # bin_numeric, target_log_transform, lag/lead/rolling, clip, cyclical, label/fourier
     "bins",               # bin_numeric
     "pairs",              # interaction_features
     "degree",             # polynomial_features
     "group_by",           # groupby_aggregate, lag/lead/rolling, dense_panel
     "aggregations",       # groupby_aggregate
     "rename",             # rename_columns
-    "time_column",        # lag/lead/rolling, dense_panel
+    "time_column",        # lag/lead/rolling, dense_panel, fourier_features
     "lags",               # create_lag_features
     "leads",              # create_lead_target
     "windows",            # create_rolling_features
     "agg",                # create_rolling_features
     "freq",               # dense_panel
-    "fill_value",         # dense_panel
+    "fill_value",         # dense_panel, constant_impute
     "code",               # execute_python
+    # ── extended operations ──
+    "target_column",      # target_encode, select_*, rfe, pca, resamplers, outlier ops
+    "method",             # power_transform
+    "output_distribution",  # quantile_transform
+    "n_quantiles",        # quantile_transform
+    "min", "max",         # clip_values
+    "lower", "upper",     # winsorize
+    "n_neighbors",        # knn_impute, resamplers (k_neighbors alias handled separately)
+    "k_neighbors",        # smote family
+    "max_iter",           # iterative_impute
+    "normalize",          # frequency_encode
+    "smoothing",          # target_encode
+    "period",             # cyclical_encode, fourier_features
+    "order",              # fourier_features
+    "k",                  # select_k_best
+    "mutual_info",        # select_k_best
+    "n_features_to_select",  # rfe_select
+    "n_components",       # pca
+    "contamination",      # isolation_forest_outliers
+    "exclude", "exclude_columns",  # scalers / outlier ops
+    "n_features",                 # hash_encode
 })
 # Operations that require params at all — used to escalate the missing-params warning.
 _OPS_REQUIRING_PARAMS = frozenset({
@@ -47,6 +68,12 @@ _OPS_REQUIRING_PARAMS = frozenset({
     "target_log_transform", "groupby_aggregate", "rename_columns",
     "dense_panel", "create_lag_features", "create_rolling_features",
     "create_lead_target", "execute_python",
+    # ── extended operations that need at least one param ──
+    "clip_values", "label_encode", "target_encode", "cyclical_encode",
+    "fourier_features", "datetime_parse", "select_k_best",
+    "select_from_model", "rfe_select", "smote", "borderline_smote",
+    "adasyn", "random_oversample", "random_undersample", "smote_tomek",
+    "smote_enn",
 })
 
 
@@ -65,28 +92,88 @@ CRITICAL CALLING CONVENTION
                "aggregations":{"qty":"sum","shimano_order_no":"nunique"}}}
 
 OPERATIONS AVAILABLE
-Basic cleaning:
+────────────────────────────────────────────────────────
+CLEANING
   • drop_high_missing   — drop cols with > params.threshold missing (default 0.5)
   • drop_duplicates     — remove duplicate rows
   • select_columns      — keep only params.columns
   • drop_columns        — remove params.columns
+  • drop_constant       — drop zero-variance / single-value columns (no params needed)
+  • drop_correlated     — drop one of each pair correlated > params.threshold (default 0.95)
   • filter_outliers     — IQR outlier removal on numeric cols (1.5 IQR)
   • impute_missing      — fill numeric with median, categorical with mode
+  • constant_impute     — fill params.columns with params.fill_value (default 0)
+  • knn_impute          — KNN-based imputation; params.columns, params.n_neighbors (default 5)
+  • iterative_impute    — MICE / IterativeImputer; params.columns, params.max_iter (default 10)
+  • add_missing_indicators — add {col}_was_missing boolean flags; params.columns optional
 
-Encoding & scaling:
+OUTLIER HANDLING
+  • winsorize           — clip to percentile range; params.lower (default 0.01), params.upper (0.99)
+  • clip_values         — clip params.column to [params.min, params.max]
+  • zscore_outlier_removal — drop rows with |z| > params.threshold (default 3.0)
+  • isolation_forest_outliers — remove anomalies; params.contamination (default "auto")
+
+SCALING & NUMERIC TRANSFORMS
+  • standard_scale      — z-score (StandardScaler); params.columns (optional, default all numeric)
+  • minmax_scale        — [0,1] scale (MinMaxScaler); params.columns
+  • robust_scale        — median/IQR scale, outlier-robust; params.columns
+  • max_abs_scale       — divide by max absolute value; params.columns
+  • power_transform     — Yeo-Johnson or Box-Cox; params.method ("yeo-johnson"|"box-cox")
+  • quantile_transform  — rank-based; params.output_distribution ("normal"|"uniform")
+  • log_transform       — log1p params.columns (adds new cols, preserves originals)
+  • target_log_transform— log1p of params.column IN PLACE (regression skew fix)
+  • bin_numeric         — quantile-bin params.column into params.bins bins
+
+ENCODING
   • encode_dates        — expand datetime → year/month/day/dayofweek/quarter
+  • datetime_parse      — coerce params.columns to proper datetime dtype
   • one_hot_encode      — one-hot params.columns (or auto low-cardinality)
-  • log_transform       — log1p params.columns
-  • bin_numeric         — quantile-bin params.column into params.bins
+  • ordinal_encode      — integer-code categoricals in params.columns
+  • label_encode        — integer-code a single params.column
+  • frequency_encode    — replace categories with their frequency; params.normalize (default True)
+  • target_encode       — smoothed mean-of-target; params.target_column, params.smoothing (default 10)
+  • hash_encode         — feature hashing for very high cardinality categoricals
+                          params.columns, params.n_features (default 64)
+                          USE when one_hot_encode would produce thousands of columns.
+  • cyclical_encode     — sin/cos encoding for cyclic features (month, hour, day-of-week)
+                          params.column, params.period (e.g. 12 for month, 24 for hour)
+  • fourier_features    — sin/cos harmonics for any periodic column
+                          params.column, params.period, params.order (default 3)
   • interaction_features— multiplicative params.pairs: [[a,b], ...]
   • polynomial_features — squared/cubed of params.columns (params.degree)
-  • target_log_transform— log1p of params.column (regression skew fix)
   • rename_columns      — params.rename: {"old":"new", ...}
 
-Aggregation:
+FEATURE SELECTION & DIMENSIONALITY REDUCTION
+  • select_k_best       — keep top-k features by F-test or mutual info
+                          params.target_column, params.k (default 10),
+                          params.mutual_info (default False)
+  • select_from_model   — RandomForest importance threshold
+                          params.target_column, params.threshold ("median"|"mean"|float)
+  • rfe_select          — Recursive Feature Elimination
+                          params.target_column, params.n_features_to_select (default 10)
+  • pca                 — Principal Component Analysis
+                          params.n_components (default 5), params.target_column (excluded)
+
+AGGREGATION
   • groupby_aggregate   — params.group_by + params.aggregations
                           Aggs: count|nunique|sum|mean|min|max|first|last
                           USE for monthly/weekly rollups of transactional rows.
+
+CLASS IMBALANCE (classification targets only — impute first, no NaNs allowed)
+  • smote               — SMOTE; auto-switches to SMOTENC when categoricals present
+                          params.target_column, params.k_neighbors (default 5)
+  • borderline_smote    — focus oversampling on the decision border (numeric features only)
+                          params.target_column, params.k_neighbors
+  • adasyn              — adaptive oversampling; params.target_column, params.k_neighbors
+  • random_oversample   — random minority oversampling; params.target_column
+  • random_undersample  — random majority undersampling; params.target_column
+  • smote_tomek         — SMOTE + Tomek-link cleaning (combined); params.target_column
+  • smote_enn           — SMOTE + Edited-Nearest-Neighbours (combined); params.target_column
+
+  WHEN TO USE RESAMPLING: when EDA or Review flags class imbalance (one class
+  is much smaller). SMOTE is the default choice. Use smote_tomek or smote_enn
+  for a cleaner boundary. Use random_undersample when the majority class is so
+  large that speed matters. Always resample AFTER other cleaning/encoding steps.
 
 Time-series feature engineering (REQUIRED for proper forecasting):
   • dense_panel         — Fill missing (group × time) combinations so every
@@ -182,6 +269,31 @@ def _tools() -> list[dict]:
                                 "dense_panel", "create_lag_features",
                                 "create_rolling_features", "create_lead_target",
                                 "execute_python",
+                                # ── scaling / numeric transforms ──
+                                "standard_scale", "minmax_scale", "robust_scale",
+                                "max_abs_scale", "power_transform",
+                                "quantile_transform", "clip_values", "winsorize",
+                                # ── imputation ──
+                                "constant_impute", "knn_impute",
+                                "iterative_impute", "add_missing_indicators",
+                                # ── encoding ──
+                                "ordinal_encode", "label_encode",
+                                "frequency_encode", "target_encode",
+                                "hash_encode",
+                                "cyclical_encode", "fourier_features",
+                                "datetime_parse",
+                                # ── cleaning ──
+                                "drop_constant", "drop_correlated",
+                                # ── selection / reduction ──
+                                "select_k_best", "select_from_model",
+                                "rfe_select", "pca",
+                                # ── outliers ──
+                                "zscore_outlier_removal",
+                                "isolation_forest_outliers",
+                                # ── class-imbalance resampling ──
+                                "smote", "borderline_smote", "adasyn",
+                                "random_oversample", "random_undersample",
+                                "smote_tomek", "smote_enn",
                             ],
                         },
                         "params": {"type": "object"},
@@ -751,4 +863,722 @@ def _apply_operation(
         )
         return result_df, detail
 
+    # ── Extended operations (scaling, encoding, imputation, selection, ──────────
+    #    dimensionality reduction, outliers, class-imbalance resampling). These
+    #    live in the _NEW_OPERATIONS registry below to keep this dispatcher flat.
+    handler = _NEW_OPERATIONS.get(operation)
+    if handler is not None:
+        return handler(df, params)
+
     return None, f"Unknown operation: {operation}"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Extended feature-engineering operations
+#
+# Each helper has the signature (df, params) -> (DataFrame | None, detail_str).
+# Returning None signals an error whose message is the detail string. Optional
+# third-party libraries (imbalanced-learn, category_encoders) are imported lazily
+# so a missing install produces a clear message rather than crashing the run.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _optional_import(module: str, pip_name: str):
+    """Import an optional dependency; return (module, None) or (None, error_msg)."""
+    try:
+        import importlib
+
+        return importlib.import_module(module), None
+    except Exception:  # ImportError or partial-install errors
+        return None, (
+            f"This operation needs the optional package '{pip_name}', which is not "
+            f"installed in this environment. Install it with `pip install {pip_name}` "
+            f"and try again, or use a different operation."
+        )
+
+
+def _numeric_columns(df: pd.DataFrame, params: dict, *, exclude: list | None = None) -> list[str]:
+    """Resolve the numeric columns a transform should act on.
+
+    Uses params.columns when provided (filtered to existing numeric columns),
+    otherwise every numeric column. Always drops any names in `exclude`
+    (e.g. the target / time / group columns the caller wants left alone).
+    """
+    exclude = set(exclude or [])
+    for key in ("exclude", "exclude_columns"):
+        extra = params.get(key)
+        if isinstance(extra, list):
+            exclude.update(extra)
+    requested = params.get("columns")
+    if requested:
+        cols = [c for c in requested if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+    else:
+        cols = df.select_dtypes(include="number").columns.tolist()
+    return [c for c in cols if c not in exclude]
+
+
+def _coerce_binary_numeric_target(y: pd.Series) -> tuple[pd.Series | None, str]:
+    """Map a target to numeric for target-encoding / mean stats.
+
+    Numeric targets pass through. Binary categorical targets are factorised to
+    0/1. Multiclass categorical targets are rejected (ambiguous for mean-encoding).
+    """
+    if pd.api.types.is_numeric_dtype(y):
+        return y.astype(float), ""
+    nunique = y.nunique(dropna=True)
+    if nunique == 2:
+        codes, _ = pd.factorize(y)
+        return pd.Series(codes, index=y.index).astype(float), ""
+    return None, (
+        f"target column has {nunique} non-numeric classes — target encoding needs "
+        "a numeric (regression) or binary target. One-hot or ordinal encode instead."
+    )
+
+
+# ── Scaling & numeric transforms ────────────────────────────────────────────
+
+
+def _scale(df: pd.DataFrame, params: dict, scaler, label: str) -> tuple[pd.DataFrame | None, str]:
+    cols = _numeric_columns(df, params)
+    if not cols:
+        return None, "No numeric columns to scale (use params.columns / params.exclude)."
+    out = df.copy()
+    out[cols] = scaler.fit_transform(out[cols])
+    return out, f"{label}: scaled {len(cols)} column(s) {cols[:8]}"
+
+
+def _op_standard_scale(df, params):
+    from sklearn.preprocessing import StandardScaler
+
+    return _scale(df, params, StandardScaler(), "StandardScaler")
+
+
+def _op_minmax_scale(df, params):
+    from sklearn.preprocessing import MinMaxScaler
+
+    return _scale(df, params, MinMaxScaler(), "MinMaxScaler")
+
+
+def _op_robust_scale(df, params):
+    from sklearn.preprocessing import RobustScaler
+
+    return _scale(df, params, RobustScaler(), "RobustScaler")
+
+
+def _op_max_abs_scale(df, params):
+    from sklearn.preprocessing import MaxAbsScaler
+
+    return _scale(df, params, MaxAbsScaler(), "MaxAbsScaler")
+
+
+def _op_power_transform(df, params):
+    from sklearn.preprocessing import PowerTransformer
+
+    method = params.get("method", "yeo-johnson")
+    if method not in {"yeo-johnson", "box-cox"}:
+        return None, "params.method must be 'yeo-johnson' (default) or 'box-cox'."
+    cols = _numeric_columns(df, params)
+    if not cols:
+        return None, "No numeric columns to transform."
+    if method == "box-cox" and (df[cols] <= 0).any().any():
+        return None, "box-cox requires strictly positive values; use 'yeo-johnson'."
+    out = df.copy()
+    out[cols] = PowerTransformer(method=method).fit_transform(out[cols])
+    return out, f"PowerTransformer ({method}): transformed {len(cols)} column(s)"
+
+
+def _op_quantile_transform(df, params):
+    from sklearn.preprocessing import QuantileTransformer
+
+    dist = params.get("output_distribution", "normal")
+    if dist not in {"normal", "uniform"}:
+        return None, "params.output_distribution must be 'normal' (default) or 'uniform'."
+    cols = _numeric_columns(df, params)
+    if not cols:
+        return None, "No numeric columns to transform."
+    n_q = min(int(params.get("n_quantiles", 1000)), len(df))
+    out = df.copy()
+    out[cols] = QuantileTransformer(
+        output_distribution=dist, n_quantiles=max(n_q, 2)
+    ).fit_transform(out[cols])
+    return out, f"QuantileTransformer ({dist}): transformed {len(cols)} column(s)"
+
+
+def _op_clip_values(df, params):
+    col = params.get("column")
+    if not col or col not in df.columns:
+        return None, f"params.column required and must exist. Available: {list(df.columns)[:20]}"
+    lo, hi = params.get("min"), params.get("max")
+    if lo is None and hi is None:
+        return None, "Provide params.min and/or params.max to clip to."
+    out = df.copy()
+    out[col] = out[col].clip(lower=lo, upper=hi)
+    return out, f"Clipped '{col}' to [{lo}, {hi}]"
+
+
+def _op_winsorize(df, params):
+    lower = float(params.get("lower", 0.01))
+    upper = float(params.get("upper", 0.99))
+    if not (0 <= lower < upper <= 1):
+        return None, "Need 0 <= lower < upper <= 1 (e.g. lower=0.01, upper=0.99)."
+    cols = _numeric_columns(df, params)
+    if not cols:
+        return None, "No numeric columns to winsorize."
+    out = df.copy()
+    for c in cols:
+        lo_v, hi_v = out[c].quantile(lower), out[c].quantile(upper)
+        out[c] = out[c].clip(lower=lo_v, upper=hi_v)
+    return out, f"Winsorized {len(cols)} column(s) to [{lower:.0%}, {upper:.0%}] percentiles"
+
+
+# ── Imputation ──────────────────────────────────────────────────────────────
+
+
+def _op_constant_impute(df, params):
+    cols = [c for c in (params.get("columns") or df.columns) if c in df.columns]
+    fill_value = params.get("fill_value", 0)
+    out = df.copy()
+    filled = 0
+    for c in cols:
+        n = int(out[c].isnull().sum())
+        if n:
+            out[c] = out[c].fillna(fill_value)
+            filled += n
+    return out, f"Constant-imputed {filled} missing cell(s) across {len(cols)} column(s) with {fill_value!r}"
+
+
+def _op_knn_impute(df, params):
+    from sklearn.impute import KNNImputer
+
+    cols = _numeric_columns(df, params)
+    if not cols:
+        return None, "KNN imputation needs numeric columns."
+    out = df.copy()
+    n_neighbors = max(1, int(params.get("n_neighbors", 5)))
+    out[cols] = KNNImputer(n_neighbors=n_neighbors).fit_transform(out[cols])
+    return out, f"KNN-imputed {len(cols)} numeric column(s) (n_neighbors={n_neighbors})"
+
+
+def _op_iterative_impute(df, params):
+    from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+    from sklearn.impute import IterativeImputer
+
+    cols = _numeric_columns(df, params)
+    if not cols:
+        return None, "Iterative imputation needs numeric columns."
+    out = df.copy()
+    max_iter = int(params.get("max_iter", 10))
+    out[cols] = IterativeImputer(max_iter=max_iter, random_state=42).fit_transform(out[cols])
+    return out, f"Iterative-imputed (MICE) {len(cols)} numeric column(s)"
+
+
+def _op_add_missing_indicators(df, params):
+    cols = params.get("columns") or [c for c in df.columns if df[c].isnull().any()]
+    cols = [c for c in cols if c in df.columns]
+    if not cols:
+        return None, "No columns with missing values to flag."
+    out = df.copy()
+    added = []
+    for c in cols:
+        flag = f"{c}_was_missing"
+        out[flag] = out[c].isnull().astype(int)
+        added.append(flag)
+    return out, f"Added {len(added)} missing-indicator flag(s): {added[:8]}"
+
+
+# ── Encoding ──────────────────────────────────────────────────────────────
+
+
+def _categorical_columns(df: pd.DataFrame, params: dict) -> list[str]:
+    requested = params.get("columns")
+    if requested:
+        return [c for c in requested if c in df.columns]
+    return df.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+
+
+def _op_ordinal_encode(df, params):
+    from sklearn.preprocessing import OrdinalEncoder
+
+    cols = _categorical_columns(df, params)
+    if not cols:
+        return None, "No categorical columns to ordinal-encode."
+    out = df.copy()
+    enc = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
+    out[cols] = enc.fit_transform(out[cols].astype("object").where(out[cols].notnull(), "__nan__"))
+    return out, f"Ordinal-encoded {len(cols)} column(s): {cols[:8]}"
+
+
+def _op_label_encode(df, params):
+    col = params.get("column")
+    if not col or col not in df.columns:
+        return None, f"params.column required and must exist. Available: {list(df.columns)[:20]}"
+    out = df.copy()
+    codes, _ = pd.factorize(out[col])
+    out[col] = codes
+    return out, f"Label-encoded '{col}' into integer codes"
+
+
+def _op_frequency_encode(df, params):
+    cols = _categorical_columns(df, params)
+    if not cols:
+        return None, "No categorical columns to frequency-encode."
+    normalize = bool(params.get("normalize", True))
+    out = df.copy()
+    added = []
+    for c in cols:
+        freq = out[c].value_counts(normalize=normalize)
+        new_col = f"{c}_freq"
+        out[new_col] = out[c].map(freq).fillna(0)
+        added.append(new_col)
+    kind = "frequency" if normalize else "count"
+    return out, f"Added {len(added)} {kind}-encoding column(s): {added[:8]}"
+
+
+def _op_target_encode(df, params):
+    target = params.get("target_column")
+    if not target or target not in df.columns:
+        return None, f"params.target_column required and must exist. Available: {list(df.columns)[:20]}"
+    cols = [c for c in (params.get("columns") or _categorical_columns(df, params)) if c in df.columns and c != target]
+    if not cols:
+        return None, "No categorical columns to target-encode (besides the target)."
+    y, err = _coerce_binary_numeric_target(df[target])
+    if y is None:
+        return None, err
+    out = df.copy()
+    smoothing = float(params.get("smoothing", 10.0))
+
+    ce, _ = _optional_import("category_encoders", "category-encoders")
+    if ce is not None:
+        enc = ce.TargetEncoder(cols=cols, smoothing=smoothing)
+        out[cols] = enc.fit_transform(out[cols], y)
+        return out, f"Target-encoded {len(cols)} column(s) via category_encoders (smoothing={smoothing})"
+
+    # Manual smoothed mean-encoding fallback (global-mean shrinkage).
+    global_mean = float(y.mean())
+    for c in cols:
+        stats = pd.DataFrame({"_y": y.values}, index=df.index).groupby(out[c])["_y"].agg(["mean", "count"])
+        smooth = (stats["count"] * stats["mean"] + smoothing * global_mean) / (stats["count"] + smoothing)
+        out[c] = out[c].map(smooth).fillna(global_mean)
+    return out, f"Target-encoded {len(cols)} column(s) via smoothed mean (smoothing={smoothing})"
+
+
+def _op_cyclical_encode(df, params):
+    col = params.get("column")
+    if not col or col not in df.columns:
+        return None, f"params.column required and must exist. Available: {list(df.columns)[:20]}"
+    if not pd.api.types.is_numeric_dtype(df[col]):
+        return None, f"'{col}' must be numeric (e.g. month 1-12, dayofweek 0-6, hour 0-23)."
+    period = params.get("period")
+    if period is None:
+        return None, "params.period required (e.g. 12 for month, 7 for dayofweek, 24 for hour)."
+    period = float(period)
+    out = df.copy()
+    out[f"{col}_sin"] = np.sin(2 * np.pi * out[col] / period)
+    out[f"{col}_cos"] = np.cos(2 * np.pi * out[col] / period)
+    return out, f"Cyclical-encoded '{col}' (period={period:g}) → {col}_sin, {col}_cos"
+
+
+def _op_fourier_features(df, params):
+    col = params.get("column") or params.get("time_column")
+    if not col or col not in df.columns:
+        return None, f"params.column (a numeric position or time index) required. Available: {list(df.columns)[:20]}"
+    period = params.get("period")
+    if period is None:
+        return None, "params.period required (the seasonal cycle length, e.g. 12 for monthly-yearly)."
+    period = float(period)
+    order = max(1, int(params.get("order", 3)))
+    series = df[col]
+    if not pd.api.types.is_numeric_dtype(series):
+        parsed = pd.to_datetime(series, errors="coerce")
+        if parsed.notna().any():
+            series = (parsed - parsed.min()).dt.days.astype(float)
+        else:
+            return None, f"'{col}' is neither numeric nor parseable as a date."
+    out = df.copy()
+    added = []
+    for k in range(1, order + 1):
+        s, c = f"fourier_{col}_sin{k}", f"fourier_{col}_cos{k}"
+        out[s] = np.sin(2 * np.pi * k * series / period)
+        out[c] = np.cos(2 * np.pi * k * series / period)
+        added += [s, c]
+    return out, f"Added {len(added)} Fourier term(s) for '{col}' (period={period:g}, order={order})"
+
+
+def _op_datetime_parse(df, params):
+    cols = [c for c in (params.get("columns") or []) if c in df.columns]
+    if not cols:
+        return None, "params.columns required — list the column(s) to parse as datetime."
+    out = df.copy()
+    parsed = []
+    for c in cols:
+        converted = pd.to_datetime(out[c], errors="coerce")
+        if converted.notna().any():
+            out[c] = converted
+            parsed.append(c)
+    if not parsed:
+        return None, f"None of {cols} could be parsed as datetime."
+    return out, f"Parsed {len(parsed)} column(s) to datetime: {parsed}"
+
+
+# ── Cleaning: constant / correlated columns ──────────────────────────────────
+
+
+def _op_drop_constant(df, params):
+    nunique = df.nunique(dropna=False)
+    constant = nunique[nunique <= 1].index.tolist()
+    if not constant:
+        return None, "No constant (zero-variance) columns found."
+    return df.drop(columns=constant), f"Dropped {len(constant)} constant column(s): {constant[:12]}"
+
+
+def _op_drop_correlated(df, params):
+    threshold = float(params.get("threshold", 0.95))
+    num = df.select_dtypes(include="number")
+    if num.shape[1] < 2:
+        return None, "Need ≥2 numeric columns to assess correlation."
+    corr = num.corr().abs()
+    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+    to_drop = [c for c in upper.columns if (upper[c] > threshold).any()]
+    if not to_drop:
+        return None, f"No numeric pairs correlated above {threshold}."
+    return df.drop(columns=to_drop), f"Dropped {len(to_drop)} column(s) correlated > {threshold}: {to_drop[:12]}"
+
+
+# ── Feature selection & dimensionality reduction ─────────────────────────────
+
+
+def _select_setup(df, params):
+    """Shared validation for supervised selectors. Returns (X_num, y, task, target, err)."""
+    target = params.get("target_column")
+    if not target or target not in df.columns:
+        return None, None, None, None, (
+            f"params.target_column required and must exist. Available: {list(df.columns)[:20]}"
+        )
+    from ..training import infer_task_type
+
+    y = df[target]
+    task = infer_task_type(y)
+    num_cols = [c for c in df.select_dtypes(include="number").columns if c != target]
+    if len(num_cols) < 2:
+        return None, None, None, None, "Need ≥2 numeric feature columns for selection."
+    X = df[num_cols].fillna(df[num_cols].median())
+    return X, y, task, target, ""
+
+
+def _op_select_k_best(df, params):
+    from sklearn.feature_selection import (
+        SelectKBest,
+        f_classif,
+        f_regression,
+        mutual_info_classif,
+        mutual_info_regression,
+    )
+
+    X, y, task, target, err = _select_setup(df, params)
+    if X is None:
+        return None, err
+    k = int(params.get("k", min(10, X.shape[1])))
+    k = max(1, min(k, X.shape[1]))
+    use_mi = bool(params.get("mutual_info", False))
+    if task == "classification":
+        score_func = mutual_info_classif if use_mi else f_classif
+    else:
+        score_func = mutual_info_regression if use_mi else f_regression
+    selector = SelectKBest(score_func=score_func, k=k).fit(X, y)
+    keep = X.columns[selector.get_support()].tolist()
+    dropped_num = [c for c in X.columns if c not in keep]
+    out = df.drop(columns=dropped_num)
+    metric = "mutual information" if use_mi else "F-test"
+    return out, f"SelectKBest ({metric}, {task}): kept top {k} numeric features {keep}, dropped {len(dropped_num)}"
+
+
+def _op_select_from_model(df, params):
+    from sklearn.feature_selection import SelectFromModel
+
+    X, y, task, target, err = _select_setup(df, params)
+    if X is None:
+        return None, err
+    if task == "classification":
+        from sklearn.ensemble import RandomForestClassifier
+
+        est = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    else:
+        from sklearn.ensemble import RandomForestRegressor
+
+        est = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+    threshold = params.get("threshold", "median")
+    selector = SelectFromModel(est, threshold=threshold).fit(X, y)
+    keep = X.columns[selector.get_support()].tolist()
+    if not keep:
+        return None, "SelectFromModel kept no features — lower the threshold."
+    dropped_num = [c for c in X.columns if c not in keep]
+    return df.drop(columns=dropped_num), (
+        f"SelectFromModel (RandomForest importance ≥ {threshold!r}): kept {len(keep)} {keep}, dropped {len(dropped_num)}"
+    )
+
+
+def _op_rfe_select(df, params):
+    from sklearn.feature_selection import RFE
+
+    X, y, task, target, err = _select_setup(df, params)
+    if X is None:
+        return None, err
+    n = int(params.get("n_features_to_select", min(10, X.shape[1])))
+    n = max(1, min(n, X.shape[1]))
+    if task == "classification":
+        from sklearn.ensemble import RandomForestClassifier
+
+        est = RandomForestClassifier(n_estimators=80, random_state=42, n_jobs=-1)
+    else:
+        from sklearn.ensemble import RandomForestRegressor
+
+        est = RandomForestRegressor(n_estimators=80, random_state=42, n_jobs=-1)
+    selector = RFE(est, n_features_to_select=n).fit(X, y)
+    keep = X.columns[selector.get_support()].tolist()
+    dropped_num = [c for c in X.columns if c not in keep]
+    return df.drop(columns=dropped_num), f"RFE: kept {n} feature(s) {keep}, dropped {len(dropped_num)}"
+
+
+def _op_pca(df, params):
+    from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
+
+    target = params.get("target_column")
+    keep_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c]) or c == target]
+    num_cols = [c for c in df.select_dtypes(include="number").columns if c != target]
+    if len(num_cols) < 2:
+        return None, "Need ≥2 numeric columns for PCA."
+    n_components = params.get("n_components", min(5, len(num_cols)))
+    if isinstance(n_components, (int, float)) and n_components >= 1:
+        n_components = min(int(n_components), len(num_cols))
+    X = StandardScaler().fit_transform(df[num_cols].fillna(df[num_cols].median()))
+    pca = PCA(n_components=n_components, random_state=42)
+    comps = pca.fit_transform(X)
+    comp_df = pd.DataFrame(
+        comps, columns=[f"pc_{i+1}" for i in range(comps.shape[1])], index=df.index
+    )
+    out = pd.concat([df[keep_cols].reset_index(drop=True), comp_df.reset_index(drop=True)], axis=1)
+    evr = pca.explained_variance_ratio_.sum()
+    return out, (
+        f"PCA: reduced {len(num_cols)} numeric features → {comps.shape[1]} components "
+        f"({evr:.1%} variance retained); kept {keep_cols}"
+    )
+
+
+# ── Outlier handling ─────────────────────────────────────────────────────────
+
+
+def _op_zscore_outlier_removal(df, params):
+    threshold = float(params.get("threshold", 3.0))
+    cols = _numeric_columns(df, params, exclude=[params.get("target_column")] if params.get("target_column") else None)
+    if not cols:
+        return None, "No numeric columns for z-score outlier removal."
+    before = len(df)
+    sub = df[cols]
+    z = (sub - sub.mean()) / sub.std(ddof=0).replace(0, np.nan)
+    mask = (z.abs() <= threshold) | z.isna()
+    out = df[mask.all(axis=1)].reset_index(drop=True)
+    return out, f"Removed {before - len(out)} row(s) with |z| > {threshold} in {len(cols)} column(s)"
+
+
+def _op_isolation_forest_outliers(df, params):
+    from sklearn.ensemble import IsolationForest
+
+    cols = _numeric_columns(df, params, exclude=[params.get("target_column")] if params.get("target_column") else None)
+    if not cols:
+        return None, "Isolation Forest needs numeric columns."
+    contamination = params.get("contamination", "auto")
+    X = df[cols].fillna(df[cols].median())
+    preds = IsolationForest(contamination=contamination, random_state=42).fit_predict(X)
+    before = len(df)
+    out = df[preds == 1].reset_index(drop=True)
+    return out, f"Isolation Forest removed {before - len(out)} anomalous row(s) (contamination={contamination})"
+
+
+# ── Class-imbalance resampling (imbalanced-learn) ────────────────────────────
+
+
+def _resample(df, params, make_sampler, label, *, numeric_only=False):
+    target = params.get("target_column")
+    if not target or target not in df.columns:
+        return None, f"params.target_column required and must exist. Available: {list(df.columns)[:20]}"
+    imblearn, err = _optional_import("imblearn", "imbalanced-learn")
+    if imblearn is None:
+        return None, err
+
+    y = df[target]
+    if pd.api.types.is_numeric_dtype(y) and y.nunique(dropna=True) > 20:
+        return None, "Resampling is for classification targets; this target looks continuous."
+    X = df.drop(columns=[target])
+    if X.isnull().any().any():
+        return None, "Resamplers cannot handle missing values — impute first (e.g. impute_missing)."
+
+    cat_cols = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+    if numeric_only and cat_cols:
+        return None, (
+            f"{label} only supports numeric features; encode categoricals first "
+            f"(categorical columns: {cat_cols[:8]}) or use operation 'smote' (auto-SMOTENC) / 'random_oversample'."
+        )
+
+    counts = y.value_counts()
+    min_count = int(counts.min())
+    k_neighbors = max(1, min(int(params.get("k_neighbors", 5)), min_count - 1)) if min_count > 1 else 1
+
+    try:
+        sampler = make_sampler(imblearn, X, cat_cols, k_neighbors)
+        X_res, y_res = sampler.fit_resample(X, y)
+    except Exception as exc:
+        return None, f"{label} failed: {exc}"
+
+    out = X_res.copy()
+    out[target] = y_res
+    out = out[df.columns]
+    new_counts = pd.Series(y_res).value_counts().to_dict()
+    return out, (
+        f"{label}: {len(df):,} → {len(out):,} rows. "
+        f"Class balance now {new_counts} (was {counts.to_dict()})"
+    )
+
+
+def _op_smote(df, params):
+    def make(imblearn, X, cat_cols, k):
+        if cat_cols:
+            from imblearn.over_sampling import SMOTENC
+
+            cat_idx = [X.columns.get_loc(c) for c in cat_cols]
+            if len(cat_idx) == X.shape[1]:
+                from imblearn.over_sampling import RandomOverSampler
+
+                return RandomOverSampler(random_state=42)
+            return SMOTENC(categorical_features=cat_idx, random_state=42, k_neighbors=k)
+        from imblearn.over_sampling import SMOTE
+
+        return SMOTE(random_state=42, k_neighbors=k)
+
+    return _resample(df, params, make, "SMOTE")
+
+
+def _op_borderline_smote(df, params):
+    def make(imblearn, X, cat_cols, k):
+        from imblearn.over_sampling import BorderlineSMOTE
+
+        return BorderlineSMOTE(random_state=42, k_neighbors=k)
+
+    return _resample(df, params, make, "BorderlineSMOTE", numeric_only=True)
+
+
+def _op_adasyn(df, params):
+    def make(imblearn, X, cat_cols, k):
+        from imblearn.over_sampling import ADASYN
+
+        return ADASYN(random_state=42, n_neighbors=k)
+
+    return _resample(df, params, make, "ADASYN", numeric_only=True)
+
+
+def _op_random_oversample(df, params):
+    def make(imblearn, X, cat_cols, k):
+        from imblearn.over_sampling import RandomOverSampler
+
+        return RandomOverSampler(random_state=42)
+
+    return _resample(df, params, make, "RandomOverSampler")
+
+
+def _op_random_undersample(df, params):
+    def make(imblearn, X, cat_cols, k):
+        from imblearn.under_sampling import RandomUnderSampler
+
+        return RandomUnderSampler(random_state=42)
+
+    return _resample(df, params, make, "RandomUnderSampler")
+
+
+def _op_smote_tomek(df, params):
+    def make(imblearn, X, cat_cols, k):
+        from imblearn.combine import SMOTETomek
+        from imblearn.over_sampling import SMOTE
+
+        return SMOTETomek(random_state=42, smote=SMOTE(random_state=42, k_neighbors=k))
+
+    return _resample(df, params, make, "SMOTETomek", numeric_only=True)
+
+
+def _op_smote_enn(df, params):
+    def make(imblearn, X, cat_cols, k):
+        from imblearn.combine import SMOTEENN
+        from imblearn.over_sampling import SMOTE
+
+        return SMOTEENN(random_state=42, smote=SMOTE(random_state=42, k_neighbors=k))
+
+    return _resample(df, params, make, "SMOTEENN", numeric_only=True)
+
+
+def _op_hash_encode(df, params):
+    from sklearn.feature_extraction import FeatureHasher
+
+    cols = _categorical_columns(df, params)
+    if not cols:
+        return None, "No categorical columns to hash-encode."
+    n_features = int(params.get("n_features", 64))
+    out = df.copy()
+    added = []
+    for c in cols:
+        hasher = FeatureHasher(n_features=n_features, input_type="string")
+        hashed = hasher.transform(out[c].astype(str).apply(lambda x: [x]))
+        hashed_df = pd.DataFrame(
+            hashed.toarray(),
+            columns=[f"{c}_hash_{i}" for i in range(n_features)],
+            index=out.index,
+        )
+        out = pd.concat([out.drop(columns=[c]), hashed_df], axis=1)
+        added.extend(hashed_df.columns.tolist())
+    return out, f"Hash-encoded {len(cols)} column(s) → {len(added)} features (n_features={n_features})"
+
+
+# ── Registry: operation name → handler ───────────────────────────────────────
+
+_NEW_OPERATIONS: dict[str, Any] = {
+    # scaling / numeric transforms
+    "standard_scale": _op_standard_scale,
+    "minmax_scale": _op_minmax_scale,
+    "robust_scale": _op_robust_scale,
+    "max_abs_scale": _op_max_abs_scale,
+    "power_transform": _op_power_transform,
+    "quantile_transform": _op_quantile_transform,
+    "clip_values": _op_clip_values,
+    "winsorize": _op_winsorize,
+    # imputation
+    "constant_impute": _op_constant_impute,
+    "knn_impute": _op_knn_impute,
+    "iterative_impute": _op_iterative_impute,
+    "add_missing_indicators": _op_add_missing_indicators,
+    # encoding
+    "ordinal_encode": _op_ordinal_encode,
+    "label_encode": _op_label_encode,
+    "frequency_encode": _op_frequency_encode,
+    "target_encode": _op_target_encode,
+    "hash_encode": _op_hash_encode,
+    "cyclical_encode": _op_cyclical_encode,
+    "fourier_features": _op_fourier_features,
+    "datetime_parse": _op_datetime_parse,
+    # cleaning
+    "drop_constant": _op_drop_constant,
+    "drop_correlated": _op_drop_correlated,
+    # selection / reduction
+    "select_k_best": _op_select_k_best,
+    "select_from_model": _op_select_from_model,
+    "rfe_select": _op_rfe_select,
+    "pca": _op_pca,
+    # outliers
+    "zscore_outlier_removal": _op_zscore_outlier_removal,
+    "isolation_forest_outliers": _op_isolation_forest_outliers,
+    # class-imbalance resampling
+    "smote": _op_smote,
+    "borderline_smote": _op_borderline_smote,
+    "adasyn": _op_adasyn,
+    "random_oversample": _op_random_oversample,
+    "random_undersample": _op_random_undersample,
+    "smote_tomek": _op_smote_tomek,
+    "smote_enn": _op_smote_enn,
+}
