@@ -21,3 +21,7 @@ category-encoders>=2.6
 xgboost>=2.0
 lightgbm>=4.0
 catboost>=1.2
+# Optional: SHAP explainability, Bayesian HPO, ARIMA auto-order selection
+shap>=0.44
+optuna>=3.0
+pmdarima>=2.0
