@@ -18,7 +18,7 @@ from ..ingestion import load_dataset
 from ..logging_setup import configure_logging
 from ..profiling import profile_dataframe
 from ..reporting import build_markdown_report
-from ..training import TrainingSettings, train_automl
+from ..training import TrainingSettings, train_automl_stream
 from .base import AgentContext, AutopilotStep, BaseAgent, to_json_safe, vision_tool_content
 
 configure_logging()
@@ -150,6 +150,19 @@ Use compare_runs to put multiple experiments side-by-side.
     representations (e.g., tree + linear + boosting).
   Stacking ensemble: best when one model can learn from others' errors.
   Typically adds +1-3 % over the best single model.
+
+════════════════════════════════════════════════════════════════════════
+# RESEARCHER INTEGRATION
+
+Call spawn_researcher when you need external knowledge to make better decisions:
+  • At the START of a run — look up expected metric ranges or state-of-the-art
+    approaches for [task_type] in this domain (e.g., "best models for demand
+    forecasting tabular data", "typical AUC for churn prediction").
+  • When a metric seems suspiciously high or unexpectedly low — verify if
+    that level is known to be achievable for this problem type.
+  • When you are unsure which model family is best for an unusual feature set.
+  • When a diagnostic pattern is ambiguous and you want literature support.
+Pass a specific, focused question — not a vague topic.
 
 ════════════════════════════════════════════════════════════════════════
 # STEP 6 — EXPLAINABILITY
@@ -808,11 +821,21 @@ class ModelingAgent(BaseAgent):
             include_models or "all", len(custom_models) if custom_models else 0, class_weight,
         )
         try:
-            result, model = train_automl(
+            result = model = x_train_split = x_test_split = y_train_split = y_test_split = None
+            for _event in train_automl_stream(
                 loaded.dataframe, settings,
                 custom_models=custom_models,
                 include_models=include_models,
-            )
+            ):
+                if _event["type"] == "done":
+                    result = _event["result"]
+                    model = _event["pipeline"]
+                    x_train_split = _event.get("x_train")
+                    x_test_split = _event.get("x_test")
+                    y_train_split = _event.get("y_train")
+                    y_test_split = _event.get("y_test")
+            if result is None:
+                raise RuntimeError("Training stream ended without a result.")
         except Exception as exc:
             log.error("train_model | FAILED dataset=%s target=%s error=%s", ds.name, target, exc)
             return json.dumps({"error": f"Training failed: {exc}"}), None, False
@@ -822,7 +845,23 @@ class ModelingAgent(BaseAgent):
         metadata = result.to_metadata()
         metadata["dataset"] = ds.to_dict()
         report_text = build_markdown_report(project.name, ds.to_dict(), metadata, profile)
-        self._ctx.store.save_run(self._ctx.project_id, metadata, model, report_text)
+        run_path = self._ctx.store.save_run(self._ctx.project_id, metadata, model, report_text)
+
+        train_data_path: str | None = None
+        test_data_path: str | None = None
+        try:
+            if x_train_split is not None and y_train_split is not None:
+                train_df = x_train_split.copy()
+                train_df[target] = y_train_split.values
+                train_data_path = str(run_path / "train_data.csv")
+                train_df.to_csv(train_data_path, index=False)
+            if x_test_split is not None and y_test_split is not None:
+                test_df = x_test_split.copy()
+                test_df[target] = y_test_split.values
+                test_data_path = str(run_path / "test_data.csv")
+                test_df.to_csv(test_data_path, index=False)
+        except Exception as exc:
+            log.warning("train_model | failed to save split CSVs: %s", exc)
 
         summary = {
             "run_id": result.run_id,
@@ -834,6 +873,9 @@ class ModelingAgent(BaseAgent):
             "best_metrics": result.best_metrics,
             "split_mode": split_mode,
             "time_column": time_column,
+            "model_path": str(run_path / "model.joblib"),
+            "train_data_path": train_data_path,
+            "test_data_path": test_data_path,
         }
         self._ctx.training_runs.append(summary)
         self._run_ids.append(result.run_id)
@@ -993,7 +1035,7 @@ class ModelingAgent(BaseAgent):
         from ..ingestion import load_dataset
         from ..training import (
             TrainingSettings, _candidate_models, build_preprocessor,
-            infer_task_type, CLASSIFICATION, train_automl,
+            infer_task_type, CLASSIFICATION,
         )
         from sklearn.pipeline import Pipeline
         from sklearn.ensemble import (

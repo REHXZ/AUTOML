@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 from .eda_agent import EdaAgent
 from .feature_engineering_agent import FeatureEngineeringAgent
 from .fine_tuning_agent import FineTuningAgent
+from .model_tester import ModelTesterAgent
 from .modeling_agent import ModelingAgent
 from .researcher_agent import ResearcherAgent
 from .review_agent import ReviewAgent
@@ -119,9 +120,13 @@ Phase enforcement is SOFT — revisit any phase when evidence demands it.
           correlation with target, temporal structure.
           Delegation brief MUST include: dataset IDs, target column, task
           type, specific questions to answer (leakage check? seasonality?).
-  Delegate: EDA Agent. Optionally Researcher Agent for domain gaps.
+  Delegate: EDA Agent. THEN Researcher Agent to establish domain benchmarks
+          and state-of-the-art approaches before modeling begins.
+          Ask: "What metric levels are typical for [task_type] in [domain]?
+          What model families or features work best for this problem type?"
   Exit:   You know which features carry signal, which are leakage risks,
-          and what transformations the FE Agent should apply.
+          what transformations the FE Agent should apply, AND you have
+          external benchmark context to calibrate your targets.
 
   ## 3. data_preparation
   Entry:  EDA findings and Feature Engineering Strategy are in the notebook.
@@ -136,10 +141,12 @@ Phase enforcement is SOFT — revisit any phase when evidence demands it.
 
   ## 4. modeling
   Entry:  Modelling-ready dataset exists.
-  Goal:   Train baseline → Review → Fine Tune at least twice.
+  Goal:   Train baseline → Test on held-out data → Review → Fine Tune at least twice.
   Delegation brief MUST include: dataset ID, target column, task type,
           time_column if forecasting, current best metric to beat.
-  Delegate: Modeling Agent (baseline) → Fine Tuning Agent (≥2 rounds).
+  Delegate: Modeling Agent (baseline) → Model Tester Agent → Review Agent → Fine Tuning Agent (≥2 rounds).
+  MANDATORY: After every Modeling Agent call, call delegate_to_model_tester BEFORE
+          delegate_to_review so the Review Agent sees real out-of-sample metrics.
   Exit:   Best metric improved < 1 % over prior best for TWO consecutive
           rounds, OR Review explicitly flags data ceiling.
 
@@ -200,13 +207,18 @@ If Modeling Agent reports target column not found:
   groupby_aggregate (specify group_by, aggregations, new_name) →
   return to modeling with the new dataset_id.
 
-## F. USE THE RESEARCHER FOR DOMAIN GAPS AND BENCHMARKS
-Call delegate_to_researcher when you encounter:
-  – An unfamiliar domain or product category
-  – Uncertainty about whether a metric level is reasonable
+## F. USE THE RESEARCHER — PROACTIVELY, NOT ONLY FOR GAPS
+Call delegate_to_researcher:
+  STANDARD (call during data_understanding for every run):
+    "What are typical [metric] ranges for [task_type] on [domain] data?
+     What model families and features are most effective for this problem?"
+  ALSO call when you encounter:
   – A surprising result that needs external verification
-  – Need to know state-of-the-art for this problem type
+  – Uncertainty about whether a feature engineering approach is correct
+  – Need for literature support before committing to a model family
+  – Domain-specific feature interpretation you cannot infer from the data
   Pass a specific, focused question — not a vague topic.
+  A single well-targeted search prevents multiple wasted experiments.
 
 ## G. DRIFT DETECTION FOR MONITORING OR SUSPICIOUS SHIFTS
 Call delegate_to_drift_detection when:
@@ -344,6 +356,22 @@ def _tools() -> list[dict]:
         {
             "type": "function",
             "function": {
+                "name": "delegate_to_model_tester",
+                "description": (
+                    "Evaluate the best trained model(s) on the held-out test set. "
+                    "ALWAYS call this after modeling and before delegate_to_review "
+                    "so the Review Agent sees real out-of-sample performance metrics."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"instructions": {"type": "string"}},
+                    "required": ["instructions"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "delegate_to_review",
                 "description": "Dispatch the Review Agent to critique training runs.",
                 "parameters": {
@@ -428,6 +456,7 @@ class AimlScientist(BaseAgent):
         super().__init__(client, deployment, context)
         self.strategy_summary: str = ""
         self._messages: list[dict] = []
+        self._tested_run_ids: set[str] = set()  # tracks runs already sent through ModelTester
 
     def run(self) -> Generator[AutopilotStep, list[str] | None, None]:
         project = self._ctx.store.get_project(self._ctx.project_id)
@@ -625,7 +654,44 @@ class AimlScientist(BaseAgent):
             log.info("Modeling Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
             return json.dumps(to_json_safe(summary)), False
 
+        if name == "delegate_to_model_tester":
+            log.info("Scientist delegating → Model Tester Agent")
+            sub = ModelTesterAgent(self._client, self._deployment, self._ctx)
+            summary = yield from sub.run(args.get("instructions", ""))
+            # Mark all current runs as tested so the auto-gate doesn't double-test them.
+            for r in self._ctx.training_runs:
+                if r.get("run_id"):
+                    self._tested_run_ids.add(r["run_id"])
+            log.info("Model Tester Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
+            return json.dumps(to_json_safe(summary)), False
+
         if name == "delegate_to_review":
+            # Code-level enforcement: always run Model Tester before Review
+            # so the Review Agent sees real out-of-sample metrics.
+            untested = [
+                r for r in self._ctx.training_runs
+                if r.get("test_data_path") and r.get("run_id") not in self._tested_run_ids
+            ]
+            if untested:
+                log.info(
+                    "Scientist auto-running Model Tester before Review | untested_runs=%s",
+                    [r["run_id"] for r in untested],
+                )
+                yield self._step(
+                    "thought",
+                    "AIML Scientist — Auto-routing",
+                    f"Running Model Tester on {len(untested)} untested run(s) before Review.",
+                )
+                tester = ModelTesterAgent(self._client, self._deployment, self._ctx)
+                tester_summary = yield from tester.run(
+                    "Evaluate all trained models on the held-out test set."
+                )
+                for r in untested:
+                    self._tested_run_ids.add(r["run_id"])
+                log.info(
+                    "Auto Model Tester finished | runs_evaluated=%s",
+                    tester_summary.get("runs_evaluated", 0),
+                )
             log.info("Scientist delegating → Review Agent")
             sub = ReviewAgent(self._client, self._deployment, self._ctx)
             summary = yield from sub.run(args.get("instructions", ""))

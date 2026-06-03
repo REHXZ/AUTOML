@@ -8,6 +8,7 @@ from typing import Any, Generator
 from .base import AgentContext, AutopilotStep, BaseAgent, to_json_safe
 from .feature_engineering_agent import FeatureEngineeringAgent
 from .modeling_agent import ModelingAgent
+from .researcher_agent import ResearcherAgent
 
 
 _SYSTEM_PROMPT = """\
@@ -21,6 +22,8 @@ Agent's critique with bold, strategic experimentation.
     features, target transforms, leakage removal, or resampling.
   • spawn_modeling(instructions) — delegate training on an improved dataset
     or with a different target framing.
+  • spawn_researcher(question) — look up domain norms, ML technique guidance,
+    or benchmark ranges to inform your next experiment.
 
 ════════════════════════════════════════════════════════════════════════
 # REASONING PROTOCOL
@@ -36,6 +39,12 @@ and record whether it improved, by how much, and why.
 
 ════════════════════════════════════════════════════════════════════════
 # WORKFLOW — STRATEGIC EXPERIMENT LOOP
+
+## Step 0 — Research (Optional but Recommended)
+If the Review Agent flagged an unfamiliar domain pattern, an ambiguous metric
+level, or you want to validate a technique before trying it:
+  → spawn_researcher("Is [technique] effective for [task type] with [context]?")
+This saves wasted experiments on approaches unlikely to help.
 
 ## Step 1 — Read Carefully
 Read the Review Agent's findings from the notebook in full.
@@ -128,6 +137,27 @@ def _tools() -> list[dict]:
                     "type": "object",
                     "properties": {"instructions": {"type": "string"}},
                     "required": ["instructions"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "spawn_researcher",
+                "description": (
+                    "Delegate a research question to the Researcher Agent to look up "
+                    "domain norms, ML technique benchmarks, or validate whether a "
+                    "proposed approach is likely to help for this problem type."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "Specific research question to investigate.",
+                        }
+                    },
+                    "required": ["question"],
                 },
             },
         },
@@ -263,6 +293,17 @@ class FineTuningAgent(BaseAgent):
                 elif name == "spawn_modeling":
                     sub_m = ModelingAgent(self._client, self._deployment, self._ctx)
                     sub_summary = yield from sub_m.run(args.get("instructions", ""))
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(to_json_safe(sub_summary)),
+                        }
+                    )
+                elif name == "spawn_researcher":
+                    question = (args.get("question") or "").strip()
+                    sub_r = ResearcherAgent(self._client, self._deployment, self._ctx)
+                    sub_summary = yield from sub_r.run(question)
                     messages.append(
                         {
                             "role": "tool",
