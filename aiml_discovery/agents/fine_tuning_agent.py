@@ -165,7 +165,11 @@ def _tools() -> list[dict]:
             "type": "function",
             "function": {
                 "name": "record_finding",
-                "description": "Write a tuning note to the shared notebook.",
+                "description": (
+                    "Write a tuning note to the shared notebook. "
+                    "text MUST start with 'SUMMARY: ' — one plain-English sentence stating what was tried and what improved. "
+                    "No column names in backticks, no acronyms without explanation. Then optionally add 'What: ', 'Why: ', 'Detail: ' sections."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {"text": {"type": "string"}},

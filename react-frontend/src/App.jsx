@@ -7,6 +7,7 @@ import EmptyCanvas from "./components/EmptyCanvas";
 import FollowUpBar from "./components/FollowUpBar";
 import LinearTimeline from "./components/LinearTimeline";
 import LiveStream from "./components/LiveStream";
+import ModelReviewPage from "./components/ModelReviewPage";
 import QuestionPanel from "./components/QuestionPanel";
 import RunHeader from "./components/RunHeader";
 import SwimlaneGraph from "./components/SwimlaneGraph";
@@ -20,6 +21,7 @@ import {
   getSession,
   listDatasets,
   listProjects,
+  listRuns,
   listSessions,
   notebookUrl,
   sendFollowUp,
@@ -85,6 +87,8 @@ export default function App() {
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [hoverIndex, setHoverIndex] = useState(null);
+  const [currentPage, setCurrentPage] = useState("autopilot");
+  const [runs, setRuns] = useState([]);
   const closeStreamRef = useRef(null);
 
   const selectedProject = projects.find((project) => project.id === projectId) ?? null;
@@ -421,6 +425,18 @@ export default function App() {
     setSelectedIndex(null);
   };
 
+  const handlePageChange = useCallback(async (page) => {
+    setCurrentPage(page);
+    if (page === "model-review" && projectId) {
+      try {
+        const projectRuns = await listRuns(projectId);
+        setRuns(projectRuns);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  }, [projectId]);
+
   const handlePause = async () => {
     if (!projectId || !activeSession) return;
     setStopping(true);
@@ -478,6 +494,8 @@ export default function App() {
         notebookHref={
           activeSession ? notebookUrl(projectId, activeSession.session_id) : null
         }
+        currentPage={currentPage}
+        onPageChange={(page) => void handlePageChange(page)}
       />
 
       {error ? (
@@ -530,7 +548,14 @@ export default function App() {
         ) : null}
 
         <div className="main">
-          {activeSession ? (
+          {currentPage === "model-review" ? (
+            <ModelReviewPage
+              projectId={projectId}
+              runs={runs}
+              datasets={datasets}
+              onBack={() => void handlePageChange("autopilot")}
+            />
+          ) : activeSession ? (
             <>
               <RunHeader
                 project={selectedProject}

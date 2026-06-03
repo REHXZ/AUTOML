@@ -399,13 +399,26 @@ def score_run_api(project_id: str, run_id: str):
             abort(400, description=f"Could not parse uploaded CSV: {exc}")
     else:
         body = request.get_json(silent=True) or {}
-        rows = body.get("data")
-        if not isinstance(rows, list) or not rows:
-            abort(400, description="JSON body must contain a non-empty 'data' array of row objects.")
-        try:
-            df = pd.DataFrame(rows)
-        except Exception as exc:
-            abort(400, description=f"Could not build DataFrame from data: {exc}")
+        dataset_id = body.get("dataset_id")
+        if dataset_id:
+            # Score against an existing project dataset
+            from aiml_discovery.ingestion import load_dataset as _load_dataset
+            datasets = store.list_datasets(project_id)
+            ds = next((d for d in datasets if d.id == dataset_id), None)
+            if ds is None:
+                abort(404, description=f"Dataset '{dataset_id}' not found in project '{project_id}'.")
+            try:
+                df = _load_dataset(ds.file_path, ds.table_name).dataframe
+            except Exception as exc:
+                abort(400, description=f"Could not read dataset '{dataset_id}': {exc}")
+        else:
+            rows = body.get("data")
+            if not isinstance(rows, list) or not rows:
+                abort(400, description="JSON body must contain either 'dataset_id' or a non-empty 'data' array.")
+            try:
+                df = pd.DataFrame(rows)
+            except Exception as exc:
+                abort(400, description=f"Could not build DataFrame from data: {exc}")
 
     # Drop target if accidentally included
     feature_df = df.drop(columns=[target_column], errors="ignore")
@@ -435,6 +448,73 @@ def score_run_api(project_id: str, run_id: str):
             pass
 
     return jsonify(result)
+
+
+@app.get("/api/projects/<project_id>/runs/<run_id>")
+def get_run_api(project_id: str, run_id: str):
+    """Return full metadata for a single training run (includes diagnostics and leaderboard)."""
+    store = ProjectStore()
+    _project_or_404(store, project_id)
+    runs = store.list_runs(project_id)
+    run = next((r for r in runs if r.get("run_id") == run_id), None)
+    if run is None:
+        abort(404, description=f"Run '{run_id}' not found in project '{project_id}'.")
+    return jsonify(run)
+
+
+@app.get("/api/projects/<project_id>/runs/<run_id>/charts")
+def get_run_charts_api(project_id: str, run_id: str):
+    """Generate and return diagnostic charts for a training run.
+
+    Uses the stored diagnostics dict (y_test/y_pred) plus the saved model file
+    to build Plotly figures without re-running inference.
+
+    Returns: {"run_id": ..., "charts": [{"title": str, "figure_json": str}, ...]}
+    """
+    from aiml_discovery.diagnostics import (
+        build_diagnostic_figures,
+        build_feature_importance_figure,
+        build_leaderboard_figure,
+        build_residuals_over_time_figure,
+    )
+
+    store = ProjectStore()
+    _project_or_404(store, project_id)
+    runs = store.list_runs(project_id)
+    run = next((r for r in runs if r.get("run_id") == run_id), None)
+    if run is None:
+        abort(404, description=f"Run '{run_id}' not found in project '{project_id}'.")
+
+    diagnostics = run.get("diagnostics") or {}
+    leaderboard = run.get("leaderboard") or []
+    task_type = run.get("task_type", "")
+    target_column = run.get("target_column", "")
+    model_path = run.get("model_path", "")
+    best_model_name = run.get("best_model_name", "")
+
+    charts = []
+
+    # Main diagnostic figures (predicted vs actual, confusion matrix, forecast)
+    for title, fig in build_diagnostic_figures(diagnostics, target_column):
+        charts.append({"title": title, "figure_json": fig.to_json()})
+
+    # Residuals over time (time-series only)
+    rot_fig = build_residuals_over_time_figure(diagnostics, target_column)
+    if rot_fig is not None:
+        charts.append({"title": "Residuals over Time", "figure_json": rot_fig.to_json()})
+
+    # Feature importance (tree-based models only)
+    if model_path and Path(model_path).exists():
+        fi_fig = build_feature_importance_figure(model_path, run_label=best_model_name)
+        if fi_fig is not None:
+            charts.append({"title": "Feature Importance", "figure_json": fi_fig.to_json()})
+
+    # Leaderboard comparison
+    lb_fig = build_leaderboard_figure(leaderboard, task_type, run_label=run_id)
+    if lb_fig is not None:
+        charts.append({"title": "Leaderboard", "figure_json": lb_fig.to_json()})
+
+    return jsonify({"run_id": run_id, "charts": charts})
 
 
 @app.get("/api/projects/<project_id>/autopilot/sessions/<session_id>/notebook")

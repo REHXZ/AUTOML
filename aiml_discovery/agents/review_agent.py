@@ -131,7 +131,11 @@ def _tools() -> list[dict]:
             "type": "function",
             "function": {
                 "name": "record_finding",
-                "description": "Write a critique to the shared notebook.",
+                "description": (
+                    "Write a critique to the shared notebook. "
+                    "text MUST start with 'SUMMARY: ' — one plain-English sentence stating the main issue found and the recommended fix. "
+                    "No column names in backticks, no jargon. Then optionally add 'What: ', 'Why: ', 'Detail: ' sections."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {"text": {"type": "string"}},
@@ -213,8 +217,12 @@ class ReviewAgent(BaseAgent):
         user_prompt = (
             f"Scientist's instructions:\n{instructions}\n\n"
             f"Training runs to review:\n{self._ctx.training_runs_summary()}\n\n"
-            f"Notebook so far:\n{self._ctx.notebook_text()}\n\n"
+            f"Notebook so far (includes held-out test results from Model Tester if available):\n"
+            f"{self._ctx.notebook_text()}\n\n"
             f"User goal: {self._ctx.user_goal or '(none)'}\n\n"
+            "Base your critique on out-of-sample (test set) metrics where available — "
+            "look for 'Model Test Results' in the notebook above. "
+            "Flag gaps between training and test performance as potential overfitting. "
             "Critique and recommend. Use spawn_researcher if you need external context."
         )
 

@@ -19,7 +19,9 @@
       "PowerShell(python -c \"import ast, pathlib; [ast.parse\\(pathlib.Path\\(p\\).read_text\\(encoding='utf-8'\\)\\) for p in ['aiml_discovery/agents/__init__.py','aiml_discovery/agents/base.py','aiml_discovery/agents/eda_agent.py','aiml_discovery/agents/feature_engineering_agent.py','aiml_discovery/agents/modeling_agent.py','aiml_discovery/agents/review_agent.py','aiml_discovery/agents/fine_tuning_agent.py','aiml_discovery/agents/scientist.py','aiml_discovery/ai_autopilot.py','app.py']]; print\\('Syntax OK'\\)\")",
       "PowerShell(python -c \"from aiml_discovery.agents.base import AgentContext, AutopilotStep, BaseAgent, build_azure_client, get_deployment, to_json_safe, fig_to_base64, vision_tool_content; print\\('base OK'\\)\")",
       "PowerShell(python -c \"import importlib.util, sys, pathlib; [exec\\(f'spec = importlib.util.spec_from_file_location\\({m!r}, {p!r}\\)'\\) or print\\(f'OK: {m}'\\) for m, p in [\\('base','aiml_discovery/agents/base.py'\\),\\('eda','aiml_discovery/agents/eda_agent.py'\\),\\('fe','aiml_discovery/agents/feature_engineering_agent.py'\\),\\('rev','aiml_discovery/agents/review_agent.py'\\),\\('sci','aiml_discovery/agents/scientist.py'\\),\\('app','app.py'\\)]]\")",
-      "Bash(python -c \"from aiml_discovery.logging_setup import configure_logging; configure_logging\\(\\); import logging; log = logging.getLogger\\('aiml_discovery.test'\\); log.info\\('logging OK'\\)\")"
+      "Bash(python -c \"from aiml_discovery.logging_setup import configure_logging; configure_logging\\(\\); import logging; log = logging.getLogger\\('aiml_discovery.test'\\); log.info\\('logging OK'\\)\")",
+      "mcp__Desktop_Commander__read_file",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }

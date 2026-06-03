@@ -86,17 +86,27 @@ UPDATE the plan (via a new record_observation) every time you rewind to
 an earlier phase. Log what changed and why.
 
 ════════════════════════════════════════════════════════════════════════
+# OBSERVATION FORMAT — ALWAYS USE THIS STRUCTURE
+
+Every call to record_observation MUST follow this format:
+
+  title: [6-10 word plain-English headline, no backticks, no jargon]
+  text:
+    SUMMARY: [One sentence: what was decided or found, and what happens next]
+    What: [One sentence: the specific finding or action]
+    Why: [One sentence: the evidence or rationale]
+    Detail: [Technical content, templates, metrics — as detailed as needed]
+
+Plain-English rules for SUMMARY and What/Why:
+  - Use column names without backticks: write  order_entry_month  not  `order_entry_month`
+  - Spell out abbreviations: "area under the ROC curve (AUC)" not just "AUC"
+  - Active voice: "We chose X because Y" not "X was selected"
+
+════════════════════════════════════════════════════════════════════════
 # REASONING PROTOCOL — THINK BEFORE EVERY MAJOR DECISION
 
-Before each delegation tool call, record one reasoning step:
-
-  "Observation from last step: [what happened].
-   Decision: I will [action] because [evidence].
-   Expected outcome: [specific metric or artifact].
-   If I instead see [failure signal] I will [fallback plan]."
-
-This Thought → Action → Expected-Observation loop prevents silent
-failures where the pipeline advances despite a broken upstream step.
+Before each delegation tool call, record one reasoning step using the
+format above. The SUMMARY line should capture the decision in plain English.
 Write this as a record_observation BEFORE the delegation call.
 
 ════════════════════════════════════════════════════════════════════════
@@ -418,10 +428,22 @@ def _tools() -> list[dict]:
             "type": "function",
             "function": {
                 "name": "record_observation",
-                "description": "Write your own observation/hypothesis to the shared notebook.",
+                "description": (
+                    "Write your own observation/hypothesis to the shared notebook. "
+                    "The 'title' should be a short, plain-English headline (6-10 words, no backticks, no jargon). "
+                    "The 'text' MUST start with 'SUMMARY: ' followed by one plain-English sentence describing "
+                    "what was found and what will happen next — no field names in backticks, no acronyms without explanation. "
+                    "Then optionally include 'What: ', 'Why: ', and 'Detail: ' sections for more depth."
+                ),
                 "parameters": {
                     "type": "object",
-                    "properties": {"text": {"type": "string"}},
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "6-10 word plain-English headline, e.g. 'Confirmed monthly order volume as forecast target'",
+                        },
+                        "text": {"type": "string"},
+                    },
                     "required": ["text"],
                 },
             },
@@ -714,9 +736,10 @@ class AimlScientist(BaseAgent):
 
         if name == "record_observation":
             text = (args.get("text") or "").strip()
+            title = (args.get("title") or "Scientist observation").strip()
             if text:
                 self._ctx.notebook.append(f"[Scientist] {text}")
-                yield self._step("observation", "Scientist observation", text)
+                yield self._step("observation", title, text)
             return json.dumps({"recorded": True}), False
 
         if name == "finalize_strategy":

@@ -366,7 +366,11 @@ def _tools() -> list[dict]:
             "type": "function",
             "function": {
                 "name": "record_finding",
-                "description": "Write a short note to the shared notebook.",
+                "description": (
+                    "Write a modeling note to the shared notebook. "
+                    "text MUST start with 'SUMMARY: ' — one plain-English sentence stating which model was tried and what result was observed. "
+                    "No column names in backticks. Then optionally add 'What: ', 'Why: ', 'Detail: ' sections."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {"text": {"type": "string"}},

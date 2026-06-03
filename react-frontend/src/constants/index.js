@@ -2,6 +2,7 @@ import {
   Binary,
   Brain,
   Compass,
+  FlaskConical,
   Globe,
   ScanEye,
   ScatterChart,
@@ -58,6 +59,14 @@ export const AGENTS = [
     role: "AutoML training",
     color: "#10B981",
     icon: Binary
+  },
+  {
+    id: "model_tester",
+    title: "Model Tester",
+    short: "tst",
+    role: "Held-out evaluation",
+    color: "#F97316",
+    icon: FlaskConical
   },
   {
     id: "review",

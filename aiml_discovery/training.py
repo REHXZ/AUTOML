@@ -591,7 +591,15 @@ def train_automl_stream(
         settings=asdict(settings),
         diagnostics=diagnostics,
     )
-    yield {"type": "done", "result": result, "pipeline": fitted_models[best_model_name]}
+    yield {
+        "type": "done",
+        "result": result,
+        "pipeline": fitted_models[best_model_name],
+        "x_train": x_train,
+        "x_test": x_test,
+        "y_train": y_train,
+        "y_test": y_test,
+    }
 
 
 def train_automl(

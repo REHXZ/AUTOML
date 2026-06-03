@@ -137,6 +137,7 @@ export function designKind(step) {
   if (step.agent === "eda") return "eda";
   if (step.agent === "feature_engineering") return "transform";
   if (step.agent === "modeling" || step.agent === "fine_tuning") return "train";
+  if (step.agent === "model_tester") return "test";
   if (step.agent === "review") return "review";
   if (step.agent === "scientist") return "plan";
   return "observation";
@@ -150,6 +151,7 @@ const DESIGN_KIND_LABELS = {
   ask_user: "ask · user",
   transform: "transform",
   train: "train",
+  test: "test",
   review: "review"
 };
 

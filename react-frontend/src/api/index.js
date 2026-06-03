@@ -187,3 +187,55 @@ export function connectSessionEvents(projectId, sessionId, fromIndex, handlers) 
 export function isTerminalStatus(status) {
   return status === "idle" || status === "complete" || status === "error";
 }
+
+export async function listRuns(projectId) {
+  const payload = await request(
+    `/api/projects/${encodeURIComponent(projectId)}/runs`
+  );
+  return payload.runs;
+}
+
+export function getRun(projectId, runId) {
+  return request(
+    `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}`
+  );
+}
+
+export function getRunCharts(projectId, runId) {
+  return request(
+    `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/charts`
+  );
+}
+
+export async function scoreRunWithFile(projectId, runId, file) {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(
+    apiUrl(`/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/score`),
+    { method: "POST", body: form }
+  );
+  const text = await response.text();
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      throw new Error("API returned a non-JSON response.");
+    }
+  }
+  if (!response.ok) {
+    const detail = payload?.detail ?? response.statusText;
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return payload;
+}
+
+export function scoreRunWithDataset(projectId, runId, datasetId) {
+  return request(
+    `/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/score`,
+    {
+      method: "POST",
+      body: JSON.stringify({ dataset_id: datasetId })
+    }
+  );
+}

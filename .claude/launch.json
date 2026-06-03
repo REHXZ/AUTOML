@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Flask API (backend)",
+      "runtimeExecutable": "C:/Users/SPLSIP266/Documents/GitHub/AIML-GUI/venv/Scripts/python.exe",
+      "runtimeArgs": ["server.py"],
+      "port": 8082
+    },
+    {
+      "name": "Vite React (frontend)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm.cmd", "--prefix", "react-frontend", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

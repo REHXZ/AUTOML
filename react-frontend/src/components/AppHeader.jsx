@@ -1,6 +1,7 @@
 import {
   ChevronRight,
   Download,
+  FlaskConical,
   RefreshCw,
   Search,
   Settings2
@@ -9,7 +10,7 @@ import {
 import { Btn, IconBtn, Pill } from "../ui";
 import { statusText } from "../utils";
 
-export default function AppHeader({ project, session, streaming, loading, onRefresh, onTweaks, notebookHref }) {
+export default function AppHeader({ project, session, streaming, loading, onRefresh, onTweaks, notebookHref, currentPage, onPageChange }) {
   return (
     <div className="app-header">
       <div className="app-header__logo">
@@ -27,9 +28,23 @@ export default function AppHeader({ project, session, streaming, loading, onRefr
       <div className="app-header__crumb">
         <span>{project?.name ?? "no project"}</span>
         <ChevronRight size={12} strokeWidth={1.5} style={{ color: "var(--fg-4)" }} />
-        <span>sessions</span>
-        <ChevronRight size={12} strokeWidth={1.5} style={{ color: "var(--fg-4)" }} />
-        <span className="app-header__crumb-current">{session?.session_id ?? "—"}</span>
+        <span
+          style={{ cursor: currentPage === "model-review" ? "pointer" : "default", color: currentPage === "model-review" ? "var(--fg-3)" : undefined }}
+          onClick={currentPage === "model-review" ? () => onPageChange("autopilot") : undefined}
+        >
+          {currentPage === "model-review" ? "sessions" : "sessions"}
+        </span>
+        {currentPage === "model-review" ? (
+          <>
+            <ChevronRight size={12} strokeWidth={1.5} style={{ color: "var(--fg-4)" }} />
+            <span className="app-header__crumb-current">model review</span>
+          </>
+        ) : (
+          <>
+            <ChevronRight size={12} strokeWidth={1.5} style={{ color: "var(--fg-4)" }} />
+            <span className="app-header__crumb-current">{session?.session_id ?? "—"}</span>
+          </>
+        )}
       </div>
 
       <div className="app-header__spacer" />
@@ -60,6 +75,16 @@ export default function AppHeader({ project, session, streaming, loading, onRefr
       )}
 
       <div className="app-header__divider" />
+
+      <Btn
+        variant={currentPage === "model-review" ? "primary" : "ghost"}
+        size="sm"
+        icon={FlaskConical}
+        disabled={!project}
+        onClick={() => onPageChange(currentPage === "model-review" ? "autopilot" : "model-review")}
+      >
+        model review
+      </Btn>
 
       <Btn variant="ghost" size="sm" icon={Search} kbd="⌘K">
         find

@@ -6,6 +6,7 @@ import {
   ChartLine,
   CircleDot,
   Database,
+  FlaskConical,
   Lightbulb,
   MessageCircleQuestion,
   ScatterChart,
@@ -116,8 +117,10 @@ export default function DetailDrawer({ session, step, theme, onClose }) {
           </div>
           <div className="drawer__hero-title">{inferStepTitle(step)}</div>
           {step.detail ? (
-            <div className="drawer__hero-body markdown">
-              <ReactMarkdown>{step.detail}</ReactMarkdown>
+            <div className="drawer__hero-body">
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: "var(--ink-100)" }}>
+                {extractSummaryLine(step.detail)}
+              </p>
             </div>
           ) : (
             <p className="drawer__hero-empty">No detail text recorded — see contextual sections below.</p>
@@ -130,15 +133,13 @@ export default function DetailDrawer({ session, step, theme, onClose }) {
           </div>
         </div>
 
-        {step.kind === "thought" || agent.id === "scientist" ? (
+        {step.kind === "thought" ? (
           <Section title="Reasoning" icon={Brain}>
             <div
               className="reasoning-blockquote"
               style={{ borderLeft: `2px solid ${agent.color}` }}
             >
-              {step.detail
-                ? truncateText(step.detail, 600)
-                : "The Scientist is orchestrating the next phase of work."}
+              {step.detail || "The Scientist is orchestrating the next phase of work."}
             </div>
           </Section>
         ) : null}
@@ -236,15 +237,30 @@ export default function DetailDrawer({ session, step, theme, onClose }) {
           </Section>
         ) : null}
 
+        {agent.id === "model_tester" && step.data?.test_metrics ? (
+          <Section title="Test Metrics (Held-Out)" icon={FlaskConical}>
+            <div className="metrics-grid">
+              {Object.entries(step.data.test_metrics).map(([k, v]) => (
+                <MetricCard key={k} label={k} value={Number(v).toFixed(4)} />
+              ))}
+            </div>
+            {step.data.test_size != null ? (
+              <div style={{ fontSize: 11, color: "var(--fg-3)", marginTop: 6 }}>
+                {step.data.test_size} test rows · {step.data.task_type} · {step.data.best_model}
+              </div>
+            ) : null}
+          </Section>
+        ) : null}
+
         {step.kind === "review" && step.detail ? (
           <Section title="Critique" icon={Lightbulb}>
-            <Row icon={AlertTriangle} color="#F472B6" text={truncateText(step.detail, 400)} />
+            <StructuredDetail text={step.detail} accentColor="#F472B6" icon={AlertTriangle} />
           </Section>
         ) : null}
 
         {step.kind === "observation" && step.detail ? (
           <Section title="Observation" icon={CircleDot}>
-            <Row icon={CircleDot} color="#06D7E8" text={truncateText(step.detail, 400)} />
+            <StructuredDetail text={step.detail} accentColor="#06D7E8" icon={CircleDot} />
           </Section>
         ) : null}
 
@@ -355,6 +371,75 @@ function Leaderboard({ runs }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Extract the SUMMARY: line, or fall back to the first sentence. */
+function extractSummaryLine(text) {
+  const raw = String(text);
+  const m = raw.match(/^SUMMARY:\s*(.+)/im);
+  if (m) return m[1].trim();
+  const stripped = raw.replace(/`/g, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+  const cut = stripped.search(/[.!?]\s|\n/);
+  if (cut > 0 && cut < 250) return stripped.slice(0, cut + 1).trim();
+  return stripped.length > 200 ? `${stripped.slice(0, 200).replace(/\s\S+$/, "")}…` : stripped;
+}
+
+/** Parse SUMMARY/What/Why/Detail sections from structured observation text. */
+function parseStructured(text) {
+  const raw = String(text);
+  const get = (key) => {
+    const m = raw.match(new RegExp(`^${key}:\\s*(.+)`, "im"));
+    return m ? m[1].trim() : null;
+  };
+  const detailMatch = raw.match(/^Detail:\s*([\s\S]+)/im);
+  return {
+    summary: get("SUMMARY"),
+    what: get("What"),
+    why: get("Why"),
+    detail: detailMatch ? detailMatch[1].trim() : null,
+  };
+}
+
+/** Renders a structured observation/critique with What/Why rows and a collapsible Detail. */
+function StructuredDetail({ text, accentColor, icon: IconCmp }) {
+  const { summary, what, why, detail } = parseStructured(text);
+  const hasStructure = summary || what || why;
+  return (
+    <div>
+      {hasStructure ? (
+        <>
+          {summary && (
+            <div style={{
+              marginBottom: 8,
+              padding: "8px 12px",
+              background: `${accentColor}12`,
+              border: `1px solid ${accentColor}30`,
+              borderRadius: "var(--radius-2)",
+              fontSize: 13,
+              color: "var(--ink-100)",
+              lineHeight: 1.5,
+            }}>
+              {summary}
+            </div>
+          )}
+          {what && <Row icon={IconCmp} color={accentColor} prefix="What" text={what} />}
+          {why && <Row icon={ArrowRight} color={accentColor} prefix="Why" text={why} />}
+        </>
+      ) : (
+        <Row icon={IconCmp} color={accentColor} text={truncateText(text, 400)} />
+      )}
+      {detail && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ cursor: "pointer", fontSize: 11, color: "var(--fg-3)", userSelect: "none" }}>
+            Show full analysis
+          </summary>
+          <div className="markdown" style={{ marginTop: 6, fontSize: 12, color: "var(--fg-2)", lineHeight: 1.55 }}>
+            <ReactMarkdown>{detail}</ReactMarkdown>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

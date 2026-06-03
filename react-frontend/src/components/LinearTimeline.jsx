@@ -183,6 +183,16 @@ export default function LinearTimeline({
 }
 
 function truncateDetail(text) {
-  const cleaned = String(text).replace(/\s+/g, " ").trim();
-  return cleaned.length > 260 ? `${cleaned.slice(0, 260)}…` : cleaned;
+  const raw = String(text);
+  // Prefer the SUMMARY: line if the agent wrote one
+  const summaryMatch = raw.match(/^SUMMARY:\s*(.+)/im);
+  if (summaryMatch) {
+    const s = summaryMatch[1].trim();
+    return s.length > 180 ? `${s.slice(0, 180).replace(/\s\S+$/, "")}…` : s;
+  }
+  // Fall back to first sentence or first line
+  const stripped = raw.replace(/`/g, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+  const firstBreak = stripped.search(/[.!?]\s|\n/);
+  if (firstBreak > 0 && firstBreak < 200) return stripped.slice(0, firstBreak + 1).trim();
+  return stripped.length > 160 ? `${stripped.slice(0, 160).replace(/\s\S+$/, "")}…` : stripped;
 }
