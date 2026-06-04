@@ -4,7 +4,7 @@ import sqlite3
 
 import pandas as pd
 
-from aiml_discovery.ingestion import load_dataset, list_sqlite_tables
+from backend.logic.ingestion import load_dataset, list_sqlite_tables
 
 
 def test_load_csv(tmp_path):

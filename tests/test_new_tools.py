@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import pytest
 
-from aiml_discovery.agents.feature_engineering_agent import _apply_operation, _NEW_OPERATIONS
+from backend.logic.agents.feature_engineering_agent import _apply_operation, _NEW_OPERATIONS
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ class TestResampling:
 # EDA analyses
 # ──────────────────────────────────────────────────────────────────────────────
 
-from aiml_discovery.agents.eda_agent import _run_analysis, _build_figure
+from backend.logic.agents.eda_agent import _run_analysis, _build_figure
 
 
 class TestEdaAnalyses:
@@ -319,12 +319,12 @@ class TestEdaNewCharts:
 # ──────────────────────────────────────────────────────────────────────────────
 
 from unittest.mock import MagicMock
-from aiml_discovery.agents.modeling_agent import ModelingAgent
-from aiml_discovery.agents.base import AgentContext
+from backend.logic.agents.modeling_agent import ModelingAgent
+from backend.logic.agents.base import AgentContext
 
 
 def _make_agent(tmp_path):
-    from aiml_discovery.storage import ProjectStore
+    from backend.services.project_store import ProjectStore
     store = ProjectStore(tmp_path)
     project_id = store.create_project("test").id
     ctx = AgentContext(project_id=project_id, store=store)
@@ -386,7 +386,7 @@ def test_build_ensemble_voting(tmp_path):
 
 
 def test_class_weight_in_train_model():
-    from aiml_discovery.training import TrainingSettings, train_automl
+    from backend.logic.training import TrainingSettings, train_automl
     df = _imbalanced_df(80, 20)
     settings = TrainingSettings(
         target_column="y", test_size=0.25,

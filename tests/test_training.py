@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from aiml_discovery.training import CLASSIFICATION, REGRESSION, TrainingSettings, infer_task_type, train_automl
+from backend.logic.training import CLASSIFICATION, REGRESSION, TrainingSettings, infer_task_type, train_automl
 
 
 def test_infer_task_type_for_categorical_target():
