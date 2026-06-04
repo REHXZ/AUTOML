@@ -1,5 +1,7 @@
 # AIML Discovery Training UI
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A local-first tabular ML discovery workspace. You can drive it the manual way
 through the Streamlit app (upload data, profile, train, compare), or hand a
 goal to the **AI Autopilot** — a multi-agent system that runs the full
@@ -30,53 +32,110 @@ remain available for manual workflows and programmatic access.
   `plotly.express` code for each chart (no JSON-spec dumps) and a clean
   appendix transcript (tool-call noise suppressed).
 
+## Requirements
+
+- **Python** 3.12 or 3.13 — some dependencies don't yet build cleanly under 3.14.
+- **Node.js** 18+ with npm — required for the React frontend.
+- An **OpenAI API key** (or Azure OpenAI credentials) — the agents won't run without LLM credentials.
+
 ## Setup
 
-Use Python 3.12 or 3.13 — some dependencies don't yet build cleanly under
-3.14.
+### 1. Clone the repository
 
+```bash
+git clone https://github.com/rehxz/aiml-gui.git
+cd aiml-gui
+```
+
+### 2. Create and activate a Python virtual environment
+
+**Windows (PowerShell)**
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+```
+
+**macOS / Linux**
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install Python dependencies
+
+```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Set `OPENAI_API_KEY` (and optionally Azure OpenAI variables) in a `.env`
-file or your shell before starting the API — the agents won't run without
-LLM credentials. The frontend never asks for keys; configure them on the
-backend only.
+Optional heavy dependencies (gracefully skipped if absent):
+
+| Package | Purpose |
+|---------|---------|
+| `xgboost` | XGBoost AutoML model |
+| `lightgbm` | LightGBM AutoML model |
+| `catboost` | CatBoost AutoML model |
+| `shap` | Feature importance / explainability |
+| `optuna` | Bayesian hyperparameter optimisation |
+| `pmdarima` | Time-series support |
+
+Install any subset with `pip install xgboost lightgbm catboost shap optuna pmdarima`.
+
+### 4. Configure environment variables
+
+Create a `.env` file in the project root (never commit this file):
+
+```dotenv
+# Required — OpenAI
+OPENAI_API_KEY=sk-...
+
+# Optional — Azure OpenAI (leave out if using standard OpenAI)
+OPENAI_API_BASE=https://<your-resource>.openai.azure.com/
+OPENAI_API_VERSION=2024-02-01
+AZURE_OPENAI_DEPLOYMENT=gpt-4o
+
+# Optional — change where project artifacts are stored (default: ~/.aiml_discovery)
+AIML_DISCOVERY_HOME=/path/to/your/projects
+```
+
+The frontend never handles API keys — configure them on the backend only.
+
+### 5. Install frontend dependencies
+
+```bash
+cd react-frontend
+npm install
+cd ..
+```
+
+> **Windows note:** if `npm` is not on your PATH, use `npm.cmd` instead.
 
 ## Run the AI Autopilot (recommended)
 
-Start the FastAPI server and the React dashboard in two terminals:
+Start the FastAPI server and the React dashboard in two separate terminals:
 
-```powershell
-# terminal 1 — backend
+```bash
+# Terminal 1 — backend (from the project root)
 uvicorn aiml_discovery.api:app --reload
 ```
 
-```powershell
-# terminal 2 — frontend
+```bash
+# Terminal 2 — frontend
 cd react-frontend
-npm.cmd install
-npm.cmd run dev
+npm run dev
 ```
 
-Open:
+> **Windows PowerShell:** use `npm.cmd run dev`.
 
-```text
-http://127.0.0.1:5173
-```
+Open **http://127.0.0.1:5173** in your browser.
 
-The Vite dev server proxies `/api` to `http://127.0.0.1:8000`, so no CORS
-config is needed. To point at a different backend, set `VITE_API_BASE`
+The Vite dev server proxies `/api` to `http://127.0.0.1:8082`, so no CORS
+config is needed in dev. To point at a different backend, set `VITE_API_BASE`
 before running Vite.
 
 Inside the dashboard:
 
-- Pick a project, upload or select a dataset, type a goal, and hit **launch
-  run**.
+- Pick a project, upload or select a dataset, type a goal, and hit **Launch Run**.
 - The swimlane graph shows each agent in its own lane with cards positioned
   by handoff order; the viewport auto-scrolls to keep the running step in
   view. Click any card (or any timeline row) to open the detail drawer.
@@ -88,21 +147,17 @@ Inside the dashboard:
 
 ## Run the Streamlit manual workspace
 
-```powershell
+```bash
 streamlit run app.py
 ```
 
 ## Run the API only
 
-```powershell
+```bash
 uvicorn aiml_discovery.api:app --reload
 ```
 
-OpenAPI docs:
-
-```text
-http://127.0.0.1:8000/docs
-```
+OpenAPI docs: **http://127.0.0.1:8082/docs**
 
 Common AI Autopilot endpoints (full reference in [docs/AUTOPILOT_API.md](docs/AUTOPILOT_API.md)):
 
@@ -138,16 +193,18 @@ notebook structured by CRISP-DM phase:
 
 By default, project artifacts live outside the repository at:
 
-```text
+```
 ~/.aiml_discovery/projects
 ```
 
 Set `AIML_DISCOVERY_HOME` to a different local folder if you want.
 
-## Test
+## Tests
 
-```powershell
+```bash
 pytest
+# or run a single file:
+pytest tests/test_training.py -v
 ```
 
 ## Further reading
@@ -157,3 +214,7 @@ pytest
 - [docs/AUTOPILOT_API.md](docs/AUTOPILOT_API.md) — full HTTP / SSE API
   reference.
 - [react-frontend/README.md](react-frontend/README.md) — frontend dev notes.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
