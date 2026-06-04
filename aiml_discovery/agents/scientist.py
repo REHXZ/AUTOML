@@ -479,6 +479,7 @@ class AimlScientist(BaseAgent):
         self.strategy_summary: str = ""
         self._messages: list[dict] = []
         self._tested_run_ids: set[str] = set()  # tracks runs already sent through ModelTester
+        self._last_prompt_tokens: int | None = None  # scientist has its own LLM loop
 
     def run(self) -> Generator[AutopilotStep, list[str] | None, None]:
         project = self._ctx.store.get_project(self._ctx.project_id)
@@ -551,10 +552,21 @@ class AimlScientist(BaseAgent):
                 tools=tools,
                 tool_choice="auto",
             )
+            # Track token usage for real-time context-size display.
+            if response.usage:
+                u = self._ctx.agent_token_usage.setdefault(
+                    "scientist",
+                    {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0},
+                )
+                u["prompt_tokens"] += response.usage.prompt_tokens
+                u["completion_tokens"] += response.usage.completion_tokens
+                u["calls"] += 1
+                self._last_prompt_tokens = response.usage.prompt_tokens
             choice = response.choices[0]
             log.debug(
-                "Scientist LLM response | finish_reason=%s has_tool_calls=%s",
+                "Scientist LLM response | finish_reason=%s has_tool_calls=%s context_tokens=%s",
                 choice.finish_reason, bool(choice.message.tool_calls),
+                self._last_prompt_tokens,
             )
 
             assistant_msg: dict[str, Any] = {
@@ -608,6 +620,104 @@ class AimlScientist(BaseAgent):
                 break
 
     # ------------------------------------------------------------------
+    # Steering helpers — review sub-agent output and optionally re-task.
+    # ------------------------------------------------------------------
+
+    _MAX_STEER_RETRIES = 2
+
+    def _steer_check(
+        self,
+        agent_label: str,
+        instructions: str,
+        summary: dict,
+    ) -> Generator[AutopilotStep, None, "str | None"]:
+        """Lightweight scientist evaluation of a sub-agent summary.
+
+        Yields a 'thought' step only when re-tasking. Returns new_instructions
+        string if the scientist wants the agent to retry, or None if satisfied.
+        """
+        eval_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are the AIML Scientist reviewing a sub-agent's completed work. "
+                    "Respond ONLY in JSON: "
+                    "{\"satisfied\": bool, \"reason\": str, \"new_instructions\": string_or_null}. "
+                    "Be satisfied unless there is a clear, specific, actionable problem "
+                    "with the output that warrants re-running the agent."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Sub-agent: {agent_label}\n"
+                    f"Instructions given:\n{instructions}\n\n"
+                    f"Agent summary (returned):\n{json.dumps(summary, indent=2)}\n\n"
+                    f"Notebook context (cumulative findings):\n{self._ctx.notebook_text()}\n\n"
+                    "Is this result sufficient to proceed? "
+                    "If not, provide specific new_instructions."
+                ),
+            },
+        ]
+        try:
+            response = self._client.chat.completions.create(
+                model=self._deployment,
+                messages=eval_messages,
+                response_format={"type": "json_object"},
+                max_tokens=400,
+            )
+            if response.usage:
+                u = self._ctx.agent_token_usage.setdefault(
+                    "scientist",
+                    {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0},
+                )
+                u["prompt_tokens"] += response.usage.prompt_tokens
+                u["completion_tokens"] += response.usage.completion_tokens
+                u["calls"] += 1
+                self._last_prompt_tokens = response.usage.prompt_tokens
+            decision = json.loads(response.choices[0].message.content or "{}")
+        except Exception as exc:
+            log.warning("Scientist _steer_check failed: %s — assuming satisfied", exc)
+            return None
+
+        if decision.get("satisfied", True):
+            log.info(
+                "Scientist steer_check | agent=%s satisfied=True", agent_label
+            )
+            return None
+
+        reason = decision.get("reason", "")
+        new_instructions = decision.get("new_instructions") or instructions
+        log.info(
+            "Scientist steer_check | agent=%s satisfied=False reason=%r",
+            agent_label, reason[:120],
+        )
+        yield self._step(
+            "thought",
+            f"[Scientist] Re-tasking {agent_label}",
+            f"**Not satisfied:** {reason}\n\n**Updated instructions:** {new_instructions}",
+        )
+        return new_instructions
+
+    def _delegate_with_steering(
+        self,
+        AgentClass: type,
+        instructions: str,
+        label: str,
+    ) -> Generator[AutopilotStep, None, tuple[str, bool]]:
+        """Run an agent with up to _MAX_STEER_RETRIES scientist-driven re-tasks."""
+        summary: dict = {}
+        for attempt in range(self._MAX_STEER_RETRIES + 1):
+            sub = AgentClass(self._client, self._deployment, self._ctx)
+            summary = yield from sub.run(instructions)
+            if attempt < self._MAX_STEER_RETRIES:
+                new_instr = yield from self._steer_check(label, instructions, summary)
+                if new_instr is None:
+                    break
+                instructions = new_instr
+        return json.dumps(to_json_safe(summary)), False
+
+    # ------------------------------------------------------------------
     # Tool dispatch — note this is a generator because some tools
     # ask the user (which suspends) or yield from sub-agents.
     # ------------------------------------------------------------------
@@ -656,31 +766,28 @@ class AimlScientist(BaseAgent):
             return content, False
 
         if name == "delegate_to_eda":
-            log.info("Scientist delegating → EDA Agent")
-            sub = EdaAgent(self._client, self._deployment, self._ctx)
-            summary = yield from sub.run(args.get("instructions", ""))
-            log.info("EDA Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
-            return json.dumps(to_json_safe(summary)), False
+            log.info("Scientist delegating → EDA Agent (with steering)")
+            return (yield from self._delegate_with_steering(
+                EdaAgent, args.get("instructions", ""), "EDA"
+            ))
 
         if name == "delegate_to_feature_engineering":
-            log.info("Scientist delegating → Feature Engineering Agent")
-            sub = FeatureEngineeringAgent(self._client, self._deployment, self._ctx)
-            summary = yield from sub.run(args.get("instructions", ""))
-            log.info("FE Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
-            return json.dumps(to_json_safe(summary)), False
+            log.info("Scientist delegating → Feature Engineering Agent (with steering)")
+            return (yield from self._delegate_with_steering(
+                FeatureEngineeringAgent, args.get("instructions", ""), "Feature Engineering"
+            ))
 
         if name == "delegate_to_modeling":
-            log.info("Scientist delegating → Modeling Agent")
-            sub = ModelingAgent(self._client, self._deployment, self._ctx)
-            summary = yield from sub.run(args.get("instructions", ""))
-            log.info("Modeling Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
-            return json.dumps(to_json_safe(summary)), False
+            log.info("Scientist delegating → Modeling Agent (with steering)")
+            return (yield from self._delegate_with_steering(
+                ModelingAgent, args.get("instructions", ""), "Modeling"
+            ))
 
         if name == "delegate_to_model_tester":
+            # No steering — deterministic evaluation; preserve _tested_run_ids tracking.
             log.info("Scientist delegating → Model Tester Agent")
             sub = ModelTesterAgent(self._client, self._deployment, self._ctx)
             summary = yield from sub.run(args.get("instructions", ""))
-            # Mark all current runs as tested so the auto-gate doesn't double-test them.
             for r in self._ctx.training_runs:
                 if r.get("run_id"):
                     self._tested_run_ids.add(r["run_id"])
@@ -714,25 +821,22 @@ class AimlScientist(BaseAgent):
                     "Auto Model Tester finished | runs_evaluated=%s",
                     tester_summary.get("runs_evaluated", 0),
                 )
-            log.info("Scientist delegating → Review Agent")
-            sub = ReviewAgent(self._client, self._deployment, self._ctx)
-            summary = yield from sub.run(args.get("instructions", ""))
-            log.info("Review Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
-            return json.dumps(to_json_safe(summary)), False
+            log.info("Scientist delegating → Review Agent (with steering)")
+            return (yield from self._delegate_with_steering(
+                ReviewAgent, args.get("instructions", ""), "Review"
+            ))
 
         if name == "delegate_to_fine_tuning":
-            log.info("Scientist delegating → Fine Tuning Agent")
-            sub = FineTuningAgent(self._client, self._deployment, self._ctx)
-            summary = yield from sub.run(args.get("instructions", ""))
-            log.info("Fine Tuning Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
-            return json.dumps(to_json_safe(summary)), False
+            log.info("Scientist delegating → Fine Tuning Agent (with steering)")
+            return (yield from self._delegate_with_steering(
+                FineTuningAgent, args.get("instructions", ""), "Fine Tuning"
+            ))
 
         if name == "delegate_to_researcher":
-            log.info("Scientist delegating → Researcher Agent")
-            sub = ResearcherAgent(self._client, self._deployment, self._ctx)
-            summary = yield from sub.run(args.get("question", ""))
-            log.info("Researcher Agent returned | summary_keys=%s", list(summary.keys()) if isinstance(summary, dict) else type(summary))
-            return json.dumps(to_json_safe(summary)), False
+            log.info("Scientist delegating → Researcher Agent (with steering)")
+            return (yield from self._delegate_with_steering(
+                ResearcherAgent, args.get("question", ""), "Researcher"
+            ))
 
         if name == "record_observation":
             text = (args.get("text") or "").strip()

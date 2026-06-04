@@ -5,6 +5,7 @@ import {
   Brain,
   ChartLine,
   CircleDot,
+  Cpu,
   Database,
   FlaskConical,
   Lightbulb,
@@ -33,6 +34,25 @@ import {
   stepStartSecs
 } from "../utils";
 
+/** Format token count as compact string: 4210 → "4.2k" */
+function fmtTok(n) {
+  if (n == null) return "—";
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+/** Derive per-agent max context tokens seen across all session steps. */
+function agentCtxMap(session) {
+  const map = {};
+  for (const s of session?.steps ?? []) {
+    const ct = s.data?.context_tokens;
+    if (ct != null && (map[s.agent] == null || ct > map[s.agent])) {
+      map[s.agent] = ct;
+    }
+  }
+  return map;
+}
+
 export default function DetailDrawer({ session, step, theme, onClose }) {
   useEffect(() => {
     const onKey = (event) => {
@@ -53,6 +73,8 @@ export default function DetailDrawer({ session, step, theme, onClose }) {
   const figure = parseFigure(step);
   const baseMs = sessionBaseTimeMs(session);
   const secs = stepStartSecs(step, baseMs) ?? 0;
+  const ctxTokens = step.data?.context_tokens ?? null;
+  const agentCtx = agentCtxMap(session);
 
   return (
     <div className="drawer">
@@ -129,6 +151,7 @@ export default function DetailDrawer({ session, step, theme, onClose }) {
             <Kv k="step" v={`#${step.index}`} />
             {baseMs ? <Kv k="started" v={clockAt(secs, baseMs)} /> : null}
             <Kv k="kind" v={kind.replace("_", " ")} />
+            {ctxTokens != null ? <Kv k="ctx" v={`${ctxTokens.toLocaleString()} tokens`} /> : null}
             {running ? <Kv k="state" v="live" live /> : null}
           </div>
         </div>
@@ -285,6 +308,64 @@ export default function DetailDrawer({ session, step, theme, onClose }) {
             <div className="markdown" style={{ color: "var(--fg-2)", fontSize: 13, lineHeight: 1.55 }}>
               <ReactMarkdown>{step.detail}</ReactMarkdown>
             </div>
+          </Section>
+        ) : null}
+
+        {/* Context Usage — shown whenever any token data is available */}
+        {(ctxTokens != null || Object.keys(agentCtx).length > 0) ? (
+          <Section title="Context Usage" icon={Cpu}>
+            {ctxTokens != null ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 10,
+                  padding: "8px 12px",
+                  background: "rgba(6,215,232,0.06)",
+                  border: "1px solid rgba(6,215,232,0.20)",
+                  borderRadius: "var(--radius-2)",
+                  fontSize: 12,
+                  color: "var(--ink-100)",
+                }}
+              >
+                <Cpu size={11} strokeWidth={1.75} style={{ color: "#06D7E8", flexShrink: 0 }} />
+                <span>
+                  This step sent{" "}
+                  <span style={{ color: "#06D7E8", fontVariantNumeric: "tabular-nums" }}>
+                    {ctxTokens.toLocaleString()}
+                  </span>{" "}
+                  prompt tokens to the LLM
+                </span>
+              </div>
+            ) : null}
+            {Object.keys(agentCtx).length > 0 ? (
+              <div>
+                <div style={{ fontSize: 11, color: "var(--fg-3)", marginBottom: 6 }}>
+                  Peak context size per agent (this session)
+                </div>
+                <div className="ctx-table">
+                  {Object.entries(agentCtx)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([agentName, tokens]) => (
+                      <div key={agentName} className="ctx-table__row">
+                        <span className="ctx-table__agent">{agentName}</span>
+                        <div className="ctx-table__bar-wrap">
+                          <div
+                            className="ctx-table__bar"
+                            style={{
+                              width: `${Math.round(
+                                (tokens / Math.max(...Object.values(agentCtx))) * 100
+                              )}%`
+                            }}
+                          />
+                        </div>
+                        <span className="ctx-table__val">{fmtTok(tokens)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ) : null}
           </Section>
         ) : null}
       </div>

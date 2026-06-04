@@ -141,6 +141,9 @@ class AgentContext:
     # LLM API call instead of waiting for the blocking call to complete.
     should_stop: bool = False
     _step_counter: int = 0
+    # Per-agent token usage accumulated during the run.
+    # {agent_name: {"prompt_tokens": int, "completion_tokens": int, "calls": int}}
+    agent_token_usage: dict = field(default_factory=dict)
 
     def next_step_index(self) -> int:
         self._step_counter += 1
@@ -231,6 +234,7 @@ class BaseAgent:
         self._client = client
         self._deployment = deployment
         self._ctx = context
+        self._last_prompt_tokens: int | None = None
 
     # ------------------------------------------------------------------
     # Step factories
@@ -243,12 +247,17 @@ class BaseAgent:
         detail: str = "",
         data: dict | None = None,
     ) -> AutopilotStep:
+        # Copy caller data and inject current context size so every step
+        # carries the agent's prompt-token count at the time it was created.
+        d: dict = dict(data) if data else {}
+        if self._last_prompt_tokens is not None:
+            d["context_tokens"] = self._last_prompt_tokens
         return AutopilotStep(
             index=self._ctx.next_step_index(),
             kind=kind,
             title=title,
             detail=detail,
-            data=data,
+            data=d if d else None,
             agent=self.name,
             phase=self._ctx.current_phase,
         )
@@ -298,10 +307,21 @@ class BaseAgent:
                 tools=tools,
                 tool_choice="auto",
             )
+            # Track token usage for real-time context-size display.
+            if response.usage:
+                u = self._ctx.agent_token_usage.setdefault(
+                    self.name,
+                    {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0},
+                )
+                u["prompt_tokens"] += response.usage.prompt_tokens
+                u["completion_tokens"] += response.usage.completion_tokens
+                u["calls"] += 1
+                self._last_prompt_tokens = response.usage.prompt_tokens
             choice = response.choices[0]
             log.debug(
-                "LLM response | agent=%s finish_reason=%s has_tool_calls=%s",
+                "LLM response | agent=%s finish_reason=%s has_tool_calls=%s context_tokens=%s",
                 self.name, choice.finish_reason, bool(choice.message.tool_calls),
+                self._last_prompt_tokens,
             )
 
             assistant_msg: dict[str, Any] = {

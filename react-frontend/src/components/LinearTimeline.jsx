@@ -15,6 +15,12 @@ import {
   visibleActivitySteps
 } from "../utils";
 
+/** Format token counts as compact strings: 4210 → "4.2k", 850 → "850" */
+function formatCtx(n) {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
 export default function LinearTimeline({
   session,
   density = "comfortable",
@@ -33,6 +39,18 @@ export default function LinearTimeline({
   );
 
   const baseMs = useMemo(() => sessionBaseTimeMs(session), [session]);
+
+  // Derive per-agent latest context size from all steps (not just visible ones).
+  const agentCtx = useMemo(() => {
+    const map = {};
+    for (const s of session?.steps ?? []) {
+      const ct = s.data?.context_tokens;
+      if (ct != null && (map[s.agent] == null || ct > map[s.agent])) {
+        map[s.agent] = ct;
+      }
+    }
+    return map;
+  }, [session?.steps]);
 
   useEffect(() => {
     if (runningRef.current && containerRef.current) {
@@ -56,6 +74,19 @@ export default function LinearTimeline({
   return (
     <div ref={containerRef} className="timeline">
       <div className="timeline__inner">
+        {/* Per-agent context size monitor — shown whenever any token data exists */}
+        {Object.keys(agentCtx).length > 0 && (
+          <div className="ctx-monitor">
+            <span className="ctx-monitor__label">ctx</span>
+            {Object.entries(agentCtx).map(([agent, tokens]) => (
+              <span key={agent} className="ctx-monitor__item">
+                <span className="ctx-monitor__agent">{agent}</span>
+                <span className="ctx-monitor__tokens">{formatCtx(tokens)}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="timeline__axis" />
         {steps.map((step) => {
           const agent = agentFor(step);
@@ -66,6 +97,7 @@ export default function LinearTimeline({
           const isHov = hoverIndex === step.index;
           const metrics = extractMetrics(step);
           const secs = stepStartSecs(step, baseMs) ?? 0;
+          const ctxTokens = step.data?.context_tokens;
 
           return (
             <div
@@ -148,6 +180,15 @@ export default function LinearTimeline({
                         <span className="accent">
                           {Number(metrics.auc).toFixed(3)}
                         </span>
+                      </span>
+                    ) : null}
+                    {ctxTokens != null ? (
+                      <span
+                        className="timeline__metric timeline__metric--ctx"
+                        title={`LLM context size: ${ctxTokens.toLocaleString()} prompt tokens`}
+                      >
+                        ctx{" "}
+                        <span className="accent">{formatCtx(ctxTokens)}</span>
                       </span>
                     ) : null}
                   </div>

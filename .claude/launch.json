@@ -12,6 +12,18 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm.cmd", "--prefix", "react-frontend", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "API test (port 8083)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set API_PORT=8083&& C:\\Users\\SPLSIP266\\Documents\\GitHub\\AIML-GUI\\venv\\Scripts\\python.exe server.py"],
+      "port": 8083
+    },
+    {
+      "name": "Vite React test (port 5174)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "npm.cmd", "--prefix", "react-frontend", "run", "dev", "--", "--config", "vite.config.test.js"],
+      "port": 5174
     }
   ]
 }
