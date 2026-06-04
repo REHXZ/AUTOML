@@ -1,6 +1,7 @@
 # AIML Discovery Training UI
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/Community-AGPL--v3-blue.svg)](LICENSE)
+[![License: Commercial](https://img.shields.io/badge/Enterprise-Commercial-orange.svg)](LICENSE)
 
 A local-first tabular ML discovery workspace. You can drive it the manual way
 through the Streamlit app (upload data, profile, train, compare), or hand a
@@ -217,4 +218,19 @@ pytest tests/test_training.py -v
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project uses a **dual license** model:
+
+| Use case | License | Cost |
+|----------|---------|------|
+| Open-source / community projects | [GNU AGPL v3.0](LICENSE) | Free |
+| Proprietary / enterprise / SaaS products | [Commercial License](LICENSE) | Paid |
+
+**Community (AGPL v3.0):** Free to use, modify, and distribute. Any software
+that incorporates or is derived from this project — including network-facing
+deployments — must also be released under the AGPL v3.0 with full source code
+made publicly available.
+
+**Enterprise / Commercial:** If you want to use this software in a proprietary
+product or service without the AGPL's source-disclosure requirements, you need
+a Commercial License. Contact **rejeyezekieljeyakumar@shimano.com.sg** to
+obtain one.
