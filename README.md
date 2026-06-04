@@ -232,5 +232,5 @@ made publicly available.
 
 **Enterprise / Commercial:** If you want to use this software in a proprietary
 product or service without the AGPL's source-disclosure requirements, you need
-a Commercial License. Contact **rejeyezekieljeyakumar@shimano.com.sg** to
+a Commercial License. Contact **rehxxz@gmail.com** to
 obtain one.
