@@ -1,0 +1,45 @@
+AIML Discovery — Dual License
+
+Copyright (c) 2026 AIML Discovery Contributors
+
+=============================================================================
+COMMUNITY LICENSE (GNU Affero General Public License v3.0)
+=============================================================================
+
+This software is free to use, modify, and distribute under the terms of the
+GNU Affero General Public License v3.0 (AGPL-3.0) for open-source and
+community projects, subject to the following condition:
+
+  Any software that incorporates, links to, or is derived from this software
+  — including use over a network — must also be released under the AGPL-3.0
+  with its complete corresponding source code made publicly available.
+
+The full text of the AGPL-3.0 is available at:
+  https://www.gnu.org/licenses/agpl-3.0.txt
+
+=============================================================================
+COMMERCIAL LICENSE
+=============================================================================
+
+Use of this software in a proprietary, commercial, or enterprise product or
+service — where you do not wish to comply with the AGPL-3.0 source
+disclosure requirements — requires a separate Commercial License.
+
+A Commercial License is required if you:
+  - Incorporate this software into a proprietary product or SaaS offering.
+  - Distribute this software as part of a commercial product without
+    releasing your source code under the AGPL-3.0.
+  - Use this software internally at an organisation with the intent to
+    avoid the AGPL-3.0 copyleft obligations.
+
+To obtain a Commercial License, contact:
+  rejeyezekieljeyakumar@shimano.com.sg
+
+=============================================================================
+SUMMARY
+=============================================================================
+
+  Open source / community use  →  AGPL-3.0 (free, copyleft applies)
+  Enterprise / proprietary use →  Commercial License (paid, contact us)
+
+=============================================================================
