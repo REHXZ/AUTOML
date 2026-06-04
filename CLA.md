@@ -2,7 +2,7 @@
 
 **Project:** AIML Discovery  
 **Copyright Holder:** AIML Discovery Contributors  
-**Contact:** rejeyezekieljeyakumar@shimano.com.sg
+**Contact:** rehxxz@gmail.com
 
 Thank you for your interest in contributing to AIML Discovery. This Contributor
 License Agreement ("Agreement") clarifies the terms under which you — the
