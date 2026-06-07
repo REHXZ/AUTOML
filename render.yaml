@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: automl-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn backend.server.app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --keep-alive 5
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: PHOENIX_TRACING_ENABLED
+        value: "false"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_API_BASE
+        sync: false
