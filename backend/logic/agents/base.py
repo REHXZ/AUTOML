@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, Generator
 
 if TYPE_CHECKING:
     from backend.services.session_store import SessionWriter
+    from .hooks import HookContext, HookManager, HookOutcome
 
 import numpy as np
 import pandas as pd
@@ -142,8 +143,20 @@ class AgentContext:
     should_stop: bool = False
     _step_counter: int = 0
     # Per-agent token usage accumulated during the run.
-    # {agent_name: {"prompt_tokens": int, "completion_tokens": int, "calls": int}}
+    # {agent_name: {"prompt_tokens": int, "completion_tokens": int, "calls": int,
+    #               "last_prompt_tokens": int}}
     agent_token_usage: dict = field(default_factory=dict)
+    # ── Hook lifecycle (set by AiAutopilot before any agent runs) ──
+    # Optional hook manager shared by all agents in a run.  When None every
+    # _fire() call is a no-op so the system behaves exactly as before.
+    hooks: "HookManager | None" = None
+    # OpenAI client + deployment stored here so that hook policies can spawn
+    # sub-agents (e.g. ModelTesterGateHook) without holding a back-reference.
+    client: Any = None
+    deployment: str = ""
+    # Run IDs already evaluated by ModelTesterAgent; used by the gate hook to
+    # avoid re-running the tester (previously tracked on AimlScientist instance).
+    tested_run_ids: set = field(default_factory=set)
 
     def next_step_index(self) -> int:
         self._step_counter += 1
@@ -234,7 +247,6 @@ class BaseAgent:
         self._client = client
         self._deployment = deployment
         self._ctx = context
-        self._last_prompt_tokens: int | None = None
 
     # ------------------------------------------------------------------
     # Step factories
@@ -247,11 +259,15 @@ class BaseAgent:
         detail: str = "",
         data: dict | None = None,
     ) -> AutopilotStep:
-        # Copy caller data and inject current context size so every step
-        # carries the agent's prompt-token count at the time it was created.
+        # Inject current context size so every step carries the agent's
+        # prompt-token count.  Reads from shared ctx so TokenAccountingHook
+        # (which writes there) is the single source of truth.
         d: dict = dict(data) if data else {}
-        if self._last_prompt_tokens is not None:
-            d["context_tokens"] = self._last_prompt_tokens
+        last_tokens = self._ctx.agent_token_usage.get(self.name, {}).get(
+            "last_prompt_tokens"
+        )
+        if last_tokens is not None:
+            d["context_tokens"] = last_tokens
         return AutopilotStep(
             index=self._ctx.next_step_index(),
             kind=kind,
@@ -266,6 +282,67 @@ class BaseAgent:
         session = getattr(self._ctx, "session", None)
         if session is not None:
             session.append_message(message)
+
+    # ------------------------------------------------------------------
+    # Hook helpers
+    # ------------------------------------------------------------------
+
+    def _fire(
+        self, hc: "HookContext"
+    ) -> "Generator[AutopilotStep, None, HookOutcome]":
+        """Fire a hook event.  No-op (returns CONTINUE) when no manager is set."""
+        from .hooks import HookOutcome
+        if self._ctx.hooks is None:
+            yield from ()
+            return HookOutcome.cont()
+        return (yield from self._ctx.hooks.fire(hc))
+
+    def _invoke_llm(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        iteration: int,
+    ) -> "Generator[AutopilotStep, None, tuple[Any, HookOutcome]]":
+        """Fire BEFORE_LLM, call the API, fire AFTER_LLM.
+
+        Returns (choice, outcome).  When BEFORE_LLM returns ABORT the API call
+        is skipped and choice is None.
+        """
+        from .hooks import HookContext, HookEvent, HookOutcome
+
+        hc_before = HookContext(
+            event=HookEvent.BEFORE_LLM,
+            agent_name=self.name,
+            ctx=self._ctx,
+            messages=messages,
+            iteration=iteration,
+        )
+        pre = yield from self._fire(hc_before)
+        if pre.decision.value == "abort":
+            return None, pre
+
+        log.debug(
+            "LLM call | agent=%s model=%s iteration=%d messages=%d",
+            self.name, self._deployment, iteration, len(messages),
+        )
+        response = self._client.chat.completions.create(
+            model=self._deployment,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+
+        hc_after = HookContext(
+            event=HookEvent.AFTER_LLM,
+            agent_name=self.name,
+            ctx=self._ctx,
+            messages=messages,
+            iteration=iteration,
+            response=response,
+        )
+        yield from self._fire(hc_after)
+
+        return response.choices[0], HookOutcome.cont()
 
     # ------------------------------------------------------------------
     # LLM tool-calling loop
@@ -285,6 +362,8 @@ class BaseAgent:
         Yields AutopilotStep objects for each thought/tool_call/tool_result and
         returns the full message history for downstream inspection.
         """
+        from .hooks import Decision, HookContext, HookEvent
+
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -294,34 +373,19 @@ class BaseAgent:
         thought_title = thought_title or f"{self.display_name} — Reasoning"
 
         for iteration in range(max_iterations):
-            if self._ctx.should_stop:
-                log.info("LLM loop stopping | agent=%s iteration=%d (stop requested)", self.name, iteration)
-                break
-            log.debug(
-                "LLM call | agent=%s model=%s iteration=%d messages=%d",
-                self.name, self._deployment, iteration, len(messages),
-            )
-            response = self._client.chat.completions.create(
-                model=self._deployment,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-            )
-            # Track token usage for real-time context-size display.
-            if response.usage:
-                u = self._ctx.agent_token_usage.setdefault(
-                    self.name,
-                    {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0},
+            choice, pre_outcome = yield from self._invoke_llm(messages, tools, iteration)
+            if choice is None or pre_outcome.decision is Decision.ABORT:
+                log.info(
+                    "LLM loop aborting | agent=%s iteration=%d reason=%r",
+                    self.name, iteration, pre_outcome.reason,
                 )
-                u["prompt_tokens"] += response.usage.prompt_tokens
-                u["completion_tokens"] += response.usage.completion_tokens
-                u["calls"] += 1
-                self._last_prompt_tokens = response.usage.prompt_tokens
-            choice = response.choices[0]
+                break
+
+            last_tokens = self._ctx.agent_token_usage.get(self.name, {}).get("last_prompt_tokens")
             log.debug(
                 "LLM response | agent=%s finish_reason=%s has_tool_calls=%s context_tokens=%s",
                 self.name, choice.finish_reason, bool(choice.message.tool_calls),
-                self._last_prompt_tokens,
+                last_tokens,
             )
 
             assistant_msg: dict[str, Any] = {
@@ -355,10 +419,27 @@ class BaseAgent:
                 raw_args = tc.function.arguments or "{}"
                 args: dict[str, Any] = json.loads(raw_args)
 
-                log.info(
-                    "tool_call | agent=%s name=%s args=%s",
-                    self.name, name, raw_args[:600],
+                # ── BEFORE_TOOL hook ────────────────────────────────────
+                hc_before = HookContext(
+                    event=HookEvent.BEFORE_TOOL,
+                    agent_name=self.name,
+                    ctx=self._ctx,
+                    tool_name=name,
+                    args=args,
+                    extra={"tool_call_id": tc.id},
                 )
+                pre_tool = yield from self._fire(hc_before)
+
+                if pre_tool.decision is Decision.ABORT:
+                    log.info(
+                        "tool_call ABORTED by hook | agent=%s name=%s reason=%r",
+                        self.name, name, pre_tool.reason,
+                    )
+                    terminate_outer = True
+                    break
+
+                if pre_tool.decision is Decision.MODIFY and pre_tool.args is not None:
+                    args = pre_tool.args
 
                 yield self._step(
                     "tool_call",
@@ -366,10 +447,52 @@ class BaseAgent:
                     json.dumps(args, indent=2),
                 )
 
-                tool_content, extra_step, terminate = dispatch(name, args, tc.id)
+                # ── Dispatch (with SKIP short-circuit) ─────────────────
+                if pre_tool.decision is Decision.SKIP:
+                    log.info(
+                        "tool_call SKIPPED by hook | agent=%s name=%s reason=%r",
+                        self.name, name, pre_tool.reason,
+                    )
+                    tool_content = pre_tool.result if pre_tool.result is not None else json.dumps({"skipped": True})
+                    extra_step = None
+                    terminate = False
+                else:
+                    try:
+                        tool_content, extra_step, terminate = dispatch(name, args, tc.id)
+                    except Exception as exc:
+                        hc_err = HookContext(
+                            event=HookEvent.TOOL_ERROR,
+                            agent_name=self.name,
+                            ctx=self._ctx,
+                            tool_name=name,
+                            args=args,
+                            error=exc,
+                        )
+                        err_out = yield from self._fire(hc_err)
+                        if err_out.decision is Decision.SKIP:
+                            tool_content = err_out.result if err_out.result is not None else json.dumps({"error": str(exc)})
+                            extra_step = None
+                            terminate = False
+                        else:
+                            raise
 
                 if extra_step is not None:
                     yield extra_step
+
+                # ── AFTER_TOOL hook ─────────────────────────────────────
+                hc_after = HookContext(
+                    event=HookEvent.AFTER_TOOL,
+                    agent_name=self.name,
+                    ctx=self._ctx,
+                    tool_name=name,
+                    args=args,
+                    result=tool_content,
+                )
+                post_tool = yield from self._fire(hc_after)
+                if post_tool.decision is Decision.MODIFY and post_tool.result is not None:
+                    tool_content = post_tool.result
+                if post_tool.decision is Decision.ABORT:
+                    terminate = True
 
                 if tool_content is None:
                     log.warning(
@@ -377,10 +500,6 @@ class BaseAgent:
                         self.name, name,
                     )
                 elif isinstance(tool_content, list):
-                    log.debug(
-                        "tool_result | agent=%s name=%s content=vision+text parts=%d",
-                        self.name, name, len(tool_content),
-                    )
                     tool_msg = {
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -389,10 +508,6 @@ class BaseAgent:
                     messages.append(tool_msg)
                     self._persist_message(tool_msg)
                 else:
-                    log.debug(
-                        "tool_result | agent=%s name=%s content_len=%d",
-                        self.name, name, len(tool_content),
-                    )
                     tool_msg = {
                         "role": "tool",
                         "tool_call_id": tc.id,

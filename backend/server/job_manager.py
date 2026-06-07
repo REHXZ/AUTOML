@@ -116,27 +116,36 @@ def _drive_job(job: AutopilotJob, answers: list[str] | None) -> None:
             try:
                 step = generator.send(answers)
             except StopIteration:
-                _finish_job(job, STATUS_COMPLETE)
+                # Check should_stop inside the lock, act outside it (avoids deadlock
+                # with the non-reentrant threading.Lock used by _finish_job).
+                with job.lock:
+                    stop_now = job.should_stop
+                _finish_job(job, STATUS_IDLE if stop_now else STATUS_COMPLETE)
                 return
             if _handle_step(job, step):
                 return
             with job.lock:
-                if job.should_stop:
-                    _finish_job(job, STATUS_IDLE)
-                    return
+                stop_now = job.should_stop
+            if stop_now:
+                _finish_job(job, STATUS_IDLE)
+                return
 
         while True:
             try:
                 step = next(generator)
             except StopIteration:
-                _finish_job(job, STATUS_COMPLETE)
+                # Check should_stop inside the lock, act outside it (avoids deadlock).
+                with job.lock:
+                    stop_now = job.should_stop
+                _finish_job(job, STATUS_IDLE if stop_now else STATUS_COMPLETE)
                 return
             if _handle_step(job, step):
                 return
             with job.lock:
-                if job.should_stop:
-                    _finish_job(job, STATUS_IDLE)
-                    return
+                stop_now = job.should_stop
+            if stop_now:
+                _finish_job(job, STATUS_IDLE)
+                return
     except Exception as exc:
         with job.lock:
             job.status = STATUS_ERROR

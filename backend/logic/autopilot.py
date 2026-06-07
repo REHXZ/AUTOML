@@ -12,6 +12,8 @@ from backend.logic.agents import (
     build_azure_client,
     get_deployment,
 )
+from backend.logic.agents.hook_policies import default_hook_manager
+from backend.logic.agents.hooks import HookContext, HookEvent
 from backend.services.session_store import (
     LoadedSession,
     SessionWriter,
@@ -63,6 +65,13 @@ class AiAutopilot:
         )
         self._ctx.session = self._session_writer
         self._session_id = effective_session_id
+
+        # Wire the hook lifecycle framework.  All agents in this run share the
+        # same HookManager instance via ctx.hooks.  ctx.client/deployment let
+        # hook policies (SteeringHook, ModelTesterGateHook) spawn sub-agents.
+        self._ctx.hooks = default_hook_manager()
+        self._ctx.client = self._client
+        self._ctx.deployment = self._deployment
 
         self._scientist = AimlScientist(self._client, self._deployment, self._ctx)
 
@@ -116,6 +125,25 @@ class AiAutopilot:
         except StopIteration:
             return
         while True:
+            # Fire STEP_EMITTED (observe-only) before persisting or forwarding.
+            if self._ctx.hooks is not None:
+                try:
+                    hc = HookContext(
+                        event=HookEvent.STEP_EMITTED,
+                        agent_name=step.agent,
+                        ctx=self._ctx,
+                        step=step,
+                    )
+                    # Drain any steps hooks emit (e.g. metrics annotations).
+                    for extra in self._ctx.hooks.fire(hc):
+                        try:
+                            self._session_writer.append_step(extra)
+                        except Exception:
+                            pass
+                        yield extra
+                except Exception as exc:
+                    log.warning("AiAutopilot._tee | STEP_EMITTED hook failed: %s", exc)
+
             try:
                 self._session_writer.append_step(step)
             except Exception as exc:  # pragma: no cover — defensive
