@@ -18,6 +18,7 @@ import {
   createProject,
   deleteSession,
   getHealth,
+  getProviders,
   getSession,
   listDatasets,
   listProjects,
@@ -40,7 +41,28 @@ import {
   visibleActivitySteps
 } from "./utils";
 
-const API_KEY_STORAGE = "aiml-autopilot-apikey";
+const PROVIDER_CFG_STORAGE = "aiml-provider-config";
+// Legacy key — migrated to PROVIDER_CFG_STORAGE on first load
+const LEGACY_API_KEY_STORAGE = "aiml-autopilot-apikey";
+
+const DEFAULT_PROVIDER_CONFIG = {
+  provider: "auto",
+  api_key: "",
+  model: "",
+  base_url: "",
+  api_version: "2024-12-01-preview",
+};
+
+function loadProviderConfig() {
+  try {
+    const raw = window.localStorage?.getItem(PROVIDER_CFG_STORAGE);
+    if (raw) return { ...DEFAULT_PROVIDER_CONFIG, ...JSON.parse(raw) };
+    // Migrate legacy bare API key
+    const legacyKey = window.localStorage?.getItem(LEGACY_API_KEY_STORAGE) || "";
+    if (legacyKey) return { ...DEFAULT_PROVIDER_CONFIG, api_key: legacyKey };
+  } catch { /* ignore */ }
+  return DEFAULT_PROVIDER_CONFIG;
+}
 
 const TWEAK_KEY = "aiml-autopilot-tweaks";
 const DEFAULT_TWEAKS = {
@@ -64,13 +86,17 @@ function loadTweaks() {
 }
 
 export default function App() {
-  const [apiKey, setApiKeyState] = useState(() => {
-    try { return window.localStorage?.getItem(API_KEY_STORAGE) || ""; } catch { return ""; }
-  });
-  const setApiKey = (key) => {
-    setApiKeyState(key);
-    try { window.localStorage?.setItem(API_KEY_STORAGE, key); } catch { /* ignore */ }
+  const [providerConfig, setProviderConfigState] = useState(loadProviderConfig);
+  const [serverProviders, setServerProviders] = useState(null);
+
+  const setProviderConfig = (cfg) => {
+    const next = { ...DEFAULT_PROVIDER_CONFIG, ...cfg };
+    setProviderConfigState(next);
+    try { window.localStorage?.setItem(PROVIDER_CFG_STORAGE, JSON.stringify(next)); } catch { /* ignore */ }
   };
+
+  // Backward-compat: apiKey derived from providerConfig
+  const apiKey = providerConfig.api_key;
 
   const [health, setHealth] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -220,9 +246,14 @@ export default function App() {
     setNotice(null);
     closeStream();
     try {
-      const [nextHealth, nextProjects] = await Promise.all([getHealth(), listProjects()]);
+      const [nextHealth, nextProjects, nextProviders] = await Promise.all([
+        getHealth(),
+        listProjects(),
+        getProviders().catch(() => null),
+      ]);
       setHealth(nextHealth);
       setProjects(nextProjects);
+      if (nextProviders) setServerProviders(nextProviders);
       const nextProjectId = projectId || nextProjects[0]?.id || "";
       setProjectId(nextProjectId);
       if (nextProjectId) await loadProjectData(nextProjectId);
@@ -360,7 +391,7 @@ export default function App() {
     setError(null);
     setNotice(null);
     try {
-      const job = await startSession(projectId, goal.trim(), apiKey.trim());
+      const job = await startSession(projectId, goal.trim(), providerConfig);
       const loaded = await refreshSession(projectId, job.session_id);
       await refreshSessions(projectId);
       openEventStream(projectId, loaded.session_id, maxStepIndex(loaded.steps));
@@ -417,7 +448,7 @@ export default function App() {
     setError(null);
     setNotice(null);
     try {
-      await sendFollowUp(projectId, activeSession.session_id, followUp.trim(), apiKey.trim());
+      await sendFollowUp(projectId, activeSession.session_id, followUp.trim(), providerConfig);
       const loaded = await refreshSession(projectId, activeSession.session_id);
       openEventStream(projectId, activeSession.session_id, maxStepIndex(loaded.steps));
       setFollowUp("");
@@ -471,7 +502,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      await sendFollowUp(projectId, activeSession.session_id, text, apiKey.trim());
+      await sendFollowUp(projectId, activeSession.session_id, text, providerConfig);
       const loaded = await refreshSession(projectId, activeSession.session_id);
       openEventStream(projectId, activeSession.session_id, maxStepIndex(loaded.steps));
       setFollowUp("");
@@ -490,6 +521,9 @@ export default function App() {
     return `${first.name} · ${rows} × ${first.column_count ?? "?"}`;
   }, [datasets]);
 
+  const providerReady = providerConfig.provider === "ollama"
+    || !!providerConfig.api_key?.trim()
+    || providerConfig.provider === "auto";
   const disabledLaunch = loading || !projectId || datasets.length === 0;
 
   return (
@@ -643,8 +677,9 @@ export default function App() {
               health={health}
               goal={goal}
               onGoal={setGoal}
-              apiKey={apiKey}
-              onApiKey={setApiKey}
+              providerConfig={providerConfig}
+              onProviderConfig={setProviderConfig}
+              serverProviders={serverProviders}
               onStart={() => void handleStart()}
               loading={loading}
               disabledLaunch={disabledLaunch}
@@ -659,8 +694,9 @@ export default function App() {
         <TweaksPanel
           tweaks={tweaks}
           onChange={setTweak}
-          apiKey={apiKey}
-          onApiKey={setApiKey}
+          providerConfig={providerConfig}
+          onProviderConfig={setProviderConfig}
+          serverProviders={serverProviders}
           onClose={() => setTweaksOpen(false)}
         />
       ) : null}

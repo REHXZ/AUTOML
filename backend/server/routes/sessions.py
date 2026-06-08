@@ -4,6 +4,8 @@ from dataclasses import asdict
 from flask import Blueprint, Response, abort, jsonify, request, stream_with_context
 
 from backend.logic.autopilot import AiAutopilot
+from backend.logic.providers import ProviderConfig, provider_from_env
+from backend.server.auth import get_current_user_id
 from backend.server.helpers import load_session_or_404, project_or_404
 from backend.server.job_manager import (
     STATUS_RUNNING,
@@ -33,11 +35,52 @@ def _require_datasets(store: ProjectStore, project_id: str) -> None:
         abort(400, description="Upload or register at least one dataset before launching AI Autopilot.")
 
 
-def _resolve_api_key(api_key: str | None) -> str:
-    resolved = (api_key or os.environ.get("OPENAI_API_KEY") or "").strip()
-    if not resolved:
-        abort(400, description="OpenAI API key is required. Pass api_key or set OPENAI_API_KEY.")
-    return resolved
+def _resolve_provider_config(body: dict) -> ProviderConfig:
+    """Build ProviderConfig from request body, with env-var fallback.
+
+    Accepted body shapes:
+      { "provider_config": { "provider": "openai", "api_key": "...", ... } }
+      { "api_key": "sk-..." }   ← legacy; treated as openai or azure per env
+    """
+    raw_cfg = body.get("provider_config")
+    if raw_cfg and isinstance(raw_cfg, dict):
+        provider = raw_cfg.get("provider", "auto")
+        if provider == "auto":
+            # Merge env defaults with anything the user explicitly provided
+            env_cfg = provider_from_env()
+            provider = env_cfg.provider
+            return ProviderConfig(
+                provider=provider,
+                api_key=raw_cfg.get("api_key") or env_cfg.api_key,
+                model=raw_cfg.get("model") or env_cfg.model,
+                base_url=raw_cfg.get("base_url") or env_cfg.base_url,
+                api_version=raw_cfg.get("api_version") or env_cfg.api_version,
+            )
+        return ProviderConfig(
+            provider=provider,
+            api_key=raw_cfg.get("api_key", ""),
+            model=raw_cfg.get("model", ""),
+            base_url=raw_cfg.get("base_url", ""),
+            api_version=raw_cfg.get("api_version", "2024-12-01-preview"),
+        )
+
+    # Legacy: bare api_key field
+    legacy_key = (body.get("api_key") or "").strip()
+    env_cfg = provider_from_env()
+    if legacy_key:
+        env_cfg.api_key = legacy_key
+
+    # Require a key for providers that need one
+    if env_cfg.provider not in ("ollama",) and not env_cfg.api_key:
+        abort(
+            400,
+            description=(
+                "API key is required. Pass provider_config.api_key in the request body, "
+                "or set the appropriate environment variable (OPENAI_API_KEY / ANTHROPIC_API_KEY)."
+            ),
+        )
+
+    return env_cfg
 
 
 def _session_payload(store: ProjectStore, project_id: str, session_id: str) -> dict:
@@ -66,8 +109,9 @@ def _session_payload(store: ProjectStore, project_id: str, session_id: str) -> d
 
 @sessions_bp.get("/api/projects/<project_id>/autopilot/sessions")
 def list_autopilot_sessions_api(project_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     return jsonify({
         "project_id": project_id,
         "sessions": [asdict(r) for r in list_sessions(store, project_id)],
@@ -76,14 +120,15 @@ def list_autopilot_sessions_api(project_id: str):
 
 @sessions_bp.post("/api/projects/<project_id>/autopilot/sessions")
 def start_autopilot_session_api(project_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     _require_datasets(store, project_id)
 
     body = request.get_json(silent=True) or {}
-    api_key = _resolve_api_key(body.get("api_key"))
+    provider_config = _resolve_provider_config(body)
     autopilot = AiAutopilot(
-        api_key=api_key,
+        provider_config=provider_config,
         project_id=project_id,
         store=store,
         user_goal=(body.get("user_goal") or "").strip(),
@@ -101,15 +146,17 @@ def start_autopilot_session_api(project_id: str):
 
 @sessions_bp.get("/api/projects/<project_id>/autopilot/sessions/<session_id>")
 def get_autopilot_session_api(project_id: str, session_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     return jsonify(_session_payload(store, project_id, session_id))
 
 
 @sessions_bp.delete("/api/projects/<project_id>/autopilot/sessions/<session_id>")
 def delete_autopilot_session_api(project_id: str, session_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
 
     job = get_job(project_id, session_id)
     if job is not None and job.worker is not None and job.worker.is_alive():
@@ -122,8 +169,9 @@ def delete_autopilot_session_api(project_id: str, session_id: str):
 
 @sessions_bp.get("/api/projects/<project_id>/autopilot/sessions/<session_id>/events")
 def stream_autopilot_events_api(project_id: str, session_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     load_session_or_404(store, project_id, session_id)
 
     from_index = max(0, request.args.get("from_index", 0, type=int))
@@ -138,8 +186,9 @@ def stream_autopilot_events_api(project_id: str, session_id: str):
 
 @sessions_bp.post("/api/projects/<project_id>/autopilot/sessions/<session_id>/answers")
 def answer_autopilot_questions_api(project_id: str, session_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     load_session_or_404(store, project_id, session_id)
 
     job = get_job(project_id, session_id)
@@ -159,8 +208,9 @@ def answer_autopilot_questions_api(project_id: str, session_id: str):
 
 @sessions_bp.post("/api/projects/<project_id>/autopilot/sessions/<session_id>/messages")
 def continue_autopilot_session_api(project_id: str, session_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     loaded = load_session_or_404(store, project_id, session_id)
 
     job = get_job(project_id, session_id)
@@ -178,10 +228,10 @@ def continue_autopilot_session_api(project_id: str, session_id: str):
     if not message:
         abort(400, description="message is required and must be non-empty.")
 
-    api_key = _resolve_api_key(body.get("api_key"))
+    provider_config = _resolve_provider_config(body)
     if job is None:
         autopilot = AiAutopilot(
-            api_key=api_key,
+            provider_config=provider_config,
             project_id=project_id,
             store=store,
             session_id=session_id,
@@ -201,8 +251,9 @@ def continue_autopilot_session_api(project_id: str, session_id: str):
 
 @sessions_bp.post("/api/projects/<project_id>/autopilot/sessions/<session_id>/stop")
 def stop_autopilot_session_api(project_id: str, session_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     job = get_job(project_id, session_id)
 
     if job is not None and job.worker is not None and job.worker.is_alive():

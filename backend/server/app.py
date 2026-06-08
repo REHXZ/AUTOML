@@ -23,6 +23,7 @@ from backend.services.tracing import configure_tracing
 from backend.server.routes.health import health_bp
 from backend.server.routes.projects import projects_bp
 from backend.server.routes.datasets import datasets_bp
+from backend.server.routes.providers import providers_bp
 from backend.server.routes.sessions import sessions_bp
 from backend.server.routes.runs import runs_bp
 
@@ -44,6 +45,7 @@ def _http_error(exc: HTTPException):
 app.register_blueprint(health_bp)
 app.register_blueprint(projects_bp)
 app.register_blueprint(datasets_bp)
+app.register_blueprint(providers_bp)
 app.register_blueprint(sessions_bp)
 app.register_blueprint(runs_bp)
 

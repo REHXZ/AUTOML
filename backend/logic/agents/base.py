@@ -200,28 +200,30 @@ class AgentContext:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# OpenAI client factory — uses Azure if OPENAI_API_BASE is set, else standard OpenAI
+# Legacy client factory — kept for backward compatibility.
+# New code should use backend.logic.providers.build_client(ProviderConfig).
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 def build_azure_client(api_key: str):
-    api_base = os.environ.get("OPENAI_API_BASE", "").strip()
-    if api_base:
-        from openai import AzureOpenAI
-        return AzureOpenAI(
-            api_key=api_key,
-            azure_endpoint=api_base,
-            api_version="2024-12-01-preview",
-        )
-    from openai import OpenAI
-    return OpenAI(api_key=api_key)
+    from backend.logic.providers import ProviderConfig, build_client, detect_provider_from_env
+    provider = detect_provider_from_env() or "openai"
+    import os
+    cfg = ProviderConfig(
+        provider=provider,
+        api_key=api_key,
+        base_url=os.environ.get("OPENAI_API_BASE", "").strip(),
+        model=os.environ.get("AZURE_OPENAI_DEPLOYMENT" if provider == "azure" else "OPENAI_MODEL", "").strip(),
+    )
+    client, _ = build_client(cfg)
+    return client
 
 
 def get_deployment() -> str:
     api_base = os.environ.get("OPENAI_API_BASE", "").strip()
     if api_base:
-        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5.4")
-    return os.environ.get("OPENAI_MODEL", "gpt-5.4")
+        return os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+    return os.environ.get("OPENAI_MODEL", "gpt-4o")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

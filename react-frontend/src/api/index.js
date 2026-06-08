@@ -102,12 +102,21 @@ export function getSession(projectId, sessionId) {
   );
 }
 
-export function startSession(projectId, userGoal, apiKey) {
+export function getProviders() {
+  return request("/api/providers");
+}
+
+export function startSession(projectId, userGoal, providerConfig) {
+  // providerConfig is { provider, api_key, model, base_url, api_version }
+  // Legacy: if a plain string api_key is passed, wrap it
+  const cfg = typeof providerConfig === "string"
+    ? { provider: "auto", api_key: providerConfig }
+    : providerConfig;
   return request(
     `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions`,
     {
       method: "POST",
-      body: JSON.stringify({ user_goal: userGoal, ...(apiKey ? { api_key: apiKey } : {}) })
+      body: JSON.stringify({ user_goal: userGoal, provider_config: cfg })
     }
   );
 }
@@ -136,12 +145,15 @@ export function submitAnswers(projectId, sessionId, answers) {
   );
 }
 
-export function sendFollowUp(projectId, sessionId, message, apiKey) {
+export function sendFollowUp(projectId, sessionId, message, providerConfig) {
+  const cfg = typeof providerConfig === "string"
+    ? { provider: "auto", api_key: providerConfig }
+    : providerConfig;
   return request(
     `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/messages`,
     {
       method: "POST",
-      body: JSON.stringify({ message, ...(apiKey ? { api_key: apiKey } : {}) })
+      body: JSON.stringify({ message, provider_config: cfg })
     }
   );
 }
