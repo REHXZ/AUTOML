@@ -23,18 +23,29 @@ function Root() {
       setView(session ? "landing" : "auth");
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const token = session?.access_token ?? null;
       setAuthToken(token);
       setUser(session?.user ?? null);
-      if (!session) setView("auth");
+      if (!session) {
+        setView("auth");
+      } else if (event === "SIGNED_IN") {
+        // OAuth / magic-link just completed — advance past the auth page
+        setView("landing");
+      }
+      // TOKEN_REFRESHED / USER_UPDATED don't change the view
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   const handleSignOut = async () => {
-    if (supabase) await supabase.auth.signOut();
+    if (!supabase) {
+      // Auth is disabled (no env vars) — just return to landing
+      setView("landing");
+      return;
+    }
+    await supabase.auth.signOut();
     setAuthToken(null);
     setUser(null);
     setView("auth");
@@ -62,10 +73,20 @@ function Root() {
   }
 
   if (view === "app") {
-    return <App user={user} onSignOut={handleSignOut} />;
+    return <App user={user} onSignOut={supabase ? handleSignOut : undefined} />;
   }
 
-  return <LandingPage onEnterApp={() => setView("app")} user={user} onSignOut={handleSignOut} />;
+  return (
+    <LandingPage
+      onEnterApp={() => {
+        // Gate entry behind auth when Supabase is configured and user isn't signed in
+        if (supabase && !user) setView("auth");
+        else setView("app");
+      }}
+      user={user}
+      onSignOut={supabase ? handleSignOut : undefined}
+    />
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(

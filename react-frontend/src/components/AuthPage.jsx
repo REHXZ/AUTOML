@@ -64,7 +64,10 @@ export default function AuthPage({ onSuccess }) {
   };
 
   const handleSSO = async (provider) => {
-    if (!supabase) return;
+    if (!supabase) {
+      setError("Authentication is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+      return;
+    }
     reset();
     setSsoLoading(provider);
     try {
