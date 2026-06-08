@@ -21,3 +21,4 @@ react-frontend/dist/
 react-frontend/.npm-cache/
 react-frontend/*.tsbuildinfo
 .vercel
+.vite/
