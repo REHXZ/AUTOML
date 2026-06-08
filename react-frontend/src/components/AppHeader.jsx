@@ -10,7 +10,7 @@ import {
 import { Btn, IconBtn, Pill } from "../ui";
 import { statusText } from "../utils";
 
-export default function AppHeader({ project, session, streaming, loading, onRefresh, onTweaks, notebookHref, currentPage, onPageChange }) {
+export default function AppHeader({ project, session, streaming, loading, onRefresh, onTweaks, notebookHref, currentPage, onPageChange, user, onSignOut }) {
   return (
     <div className="app-header">
       <div className="app-header__logo">
@@ -104,7 +104,14 @@ export default function AppHeader({ project, session, streaming, loading, onRefr
         refresh
       </Btn>
       <IconBtn icon={Settings2} label="Tweaks" onClick={onTweaks} />
-      <div className="app-header__avatar">YH</div>
+      {onSignOut ? (
+        <Btn variant="ghost" size="sm" onClick={onSignOut} title={user?.email}>
+          sign out
+        </Btn>
+      ) : null}
+      <div className="app-header__avatar" title={user?.email}>
+        {user?.email?.[0]?.toUpperCase() ?? "U"}
+      </div>
     </div>
   );
 }

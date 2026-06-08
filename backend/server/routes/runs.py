@@ -5,6 +5,7 @@ from typing import Any
 from flask import Blueprint, Response, abort, jsonify, request
 
 from backend.logic.notebook_export import build_notebook, serialize_notebook
+from backend.server.auth import get_current_user_id
 from backend.server.helpers import load_session_or_404, project_or_404
 from backend.services.project_store import ProjectStore
 
@@ -13,8 +14,9 @@ runs_bp = Blueprint("runs", __name__)
 
 @runs_bp.get("/api/projects/<project_id>/runs")
 def list_runs_api(project_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     runs = store.list_runs(project_id)
     safe = [
         {k: v for k, v in r.items() if k not in {"diagnostics", "leaderboard"}}
@@ -25,8 +27,9 @@ def list_runs_api(project_id: str):
 
 @runs_bp.get("/api/projects/<project_id>/runs/<run_id>")
 def get_run_api(project_id: str, run_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     runs = store.list_runs(project_id)
     run = next((r for r in runs if r.get("run_id") == run_id), None)
     if run is None:
@@ -43,8 +46,9 @@ def get_run_charts_api(project_id: str, run_id: str):
         build_residuals_over_time_figure,
     )
 
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     runs = store.list_runs(project_id)
     run = next((r for r in runs if r.get("run_id") == run_id), None)
     if run is None:
@@ -83,8 +87,9 @@ def score_run_api(project_id: str, run_id: str):
     import joblib
     import pandas as pd
 
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
 
     runs = store.list_runs(project_id)
     run = next((r for r in runs if r.get("run_id") == run_id), None)
@@ -160,8 +165,9 @@ def score_run_api(project_id: str, run_id: str):
 
 @runs_bp.get("/api/projects/<project_id>/autopilot/sessions/<session_id>/notebook")
 def download_autopilot_notebook_api(project_id: str, session_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project = project_or_404(store, project_id)
+    project = project_or_404(store, project_id, user_id=user_id)
     loaded = load_session_or_404(store, project_id, session_id)
     notebook = build_notebook(project, loaded, store)
     data = serialize_notebook(notebook)

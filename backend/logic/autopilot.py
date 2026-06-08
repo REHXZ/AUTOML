@@ -9,11 +9,10 @@ from backend.logic.agents import (
     AgentContext,
     AimlScientist,
     AutopilotStep,
-    build_azure_client,
-    get_deployment,
 )
 from backend.logic.agents.hook_policies import default_hook_manager
 from backend.logic.agents.hooks import HookContext, HookEvent
+from backend.logic.providers import ProviderConfig, build_client, provider_from_env
 from backend.services.session_store import (
     LoadedSession,
     SessionWriter,
@@ -30,15 +29,23 @@ class AiAutopilot:
 
     def __init__(
         self,
-        api_key: str,
-        project_id: str,
-        store: ProjectStore,
+        provider_config: ProviderConfig | None = None,
+        project_id: str = "",
+        store: ProjectStore | None = None,
         user_goal: str = "",
         session_id: str | None = None,
         preloaded_session: LoadedSession | None = None,
+        # Legacy: api_key accepted for backward compatibility
+        api_key: str | None = None,
     ) -> None:
-        self._client = build_azure_client(api_key)
-        self._deployment = get_deployment()
+        if provider_config is None:
+            # Backward compat: build config from api_key + env vars
+            cfg = provider_from_env()
+            if api_key:
+                cfg.api_key = api_key
+            provider_config = cfg
+
+        self._client, self._deployment = build_client(provider_config)
 
         resumed: LoadedSession | None = preloaded_session
         if session_id is not None and resumed is None:

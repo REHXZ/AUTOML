@@ -7,6 +7,7 @@ from .base import (
     build_azure_client,
     get_deployment,
 )
+from backend.logic.providers import ProviderConfig, build_client
 from .drift_agent import DriftAgent
 from .eda_agent import EdaAgent
 from .feature_engineering_agent import FeatureEngineeringAgent
@@ -31,8 +32,12 @@ __all__ = [
     "ModelingAgent",
     "ResearcherAgent",
     "ReviewAgent",
+    # Legacy client helpers (prefer build_client + ProviderConfig)
     "build_azure_client",
     "get_deployment",
+    # Provider abstraction
+    "ProviderConfig",
+    "build_client",
     # Hook lifecycle framework
     "Decision",
     "Hook",
