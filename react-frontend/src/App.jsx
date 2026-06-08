@@ -1,6 +1,7 @@
 import { AlertTriangle, Settings2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import AgentOutputPanel from "./components/AgentOutputPanel";
 import AppHeader from "./components/AppHeader";
 import DetailDrawer from "./components/DetailDrawer";
 import EmptyCanvas from "./components/EmptyCanvas";
@@ -648,6 +649,11 @@ export default function App({ user, onSignOut }) {
                   />
                 ) : null}
               </div>
+
+              <AgentOutputPanel
+                session={activeSession}
+                onSelectStep={setSelectedIndex}
+              />
 
               {activeSession.status === "waiting_for_input" && questions.length ? (
                 <QuestionPanel

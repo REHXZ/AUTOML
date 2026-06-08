@@ -151,10 +151,18 @@ def _build_azure_client(cfg: ProviderConfig):
     from openai import AzureOpenAI
     base_url = cfg.base_url or os.environ.get("OPENAI_API_BASE", "")
     model = cfg.effective_model()
+    # Prefer cfg.api_version (set by provider_from_env or explicitly), then
+    # the env var directly (covers the non-auto path where cfg comes from the
+    # frontend default), then fall back to the SDK-safe minimum.
+    api_version = (
+        cfg.api_version
+        or os.environ.get("AZURE_OPENAI_API_VERSION", "")
+        or "2024-12-01-preview"
+    )
     client = AzureOpenAI(
         api_key=cfg.api_key,
         azure_endpoint=base_url,
-        api_version=cfg.api_version or "2024-12-01-preview",
+        api_version=api_version,
     )
     return client, model
 

@@ -46,7 +46,10 @@ def _resolve_provider_config(body: dict) -> ProviderConfig:
     if raw_cfg and isinstance(raw_cfg, dict):
         provider = raw_cfg.get("provider", "auto")
         if provider == "auto":
-            # Merge env defaults with anything the user explicitly provided
+            # Merge env defaults with anything the user explicitly provided.
+            # Env wins for api_version: the frontend always sends its hardcoded
+            # default ("2024-12-01-preview") which should not override an
+            # explicitly configured AZURE_OPENAI_API_VERSION env var.
             env_cfg = provider_from_env()
             provider = env_cfg.provider
             return ProviderConfig(
@@ -54,7 +57,7 @@ def _resolve_provider_config(body: dict) -> ProviderConfig:
                 api_key=raw_cfg.get("api_key") or env_cfg.api_key,
                 model=raw_cfg.get("model") or env_cfg.model,
                 base_url=raw_cfg.get("base_url") or env_cfg.base_url,
-                api_version=raw_cfg.get("api_version") or env_cfg.api_version,
+                api_version=env_cfg.api_version or raw_cfg.get("api_version") or "2024-12-01-preview",
             )
         return ProviderConfig(
             provider=provider,

@@ -1,23 +1,63 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "aiml-discovery-training-ui"
+name = "aiml-discovery"
 version = "0.1.0"
-description = "Local-first Streamlit UI for tabular AI/ML discovery and training."
-requires-python = ">=3.12"
+description = "Autonomous AutoML pipeline — embed the full multi-agent CRISP-DM engine in your Python workflow"
+readme = "PYTHON-PACKAGE.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["automl", "machine-learning", "ai", "agents", "data-science"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
-    "streamlit>=1.36",
-    "fastapi>=0.111",
-    "uvicorn[standard]>=0.30",
+    "openai>=1.0",
     "pandas>=2.2",
     "scikit-learn>=1.4",
     "scipy>=1.11",
-    "statsmodels>=0.14",
-    "imbalanced-learn>=0.12",
-    "category-encoders>=2.6",
     "joblib>=1.4",
     "plotly>=5.22",
     "openpyxl>=3.1",
-    "python-multipart>=0.0.9",
+    "nbformat>=5.10",
+    "python-dotenv>=1.0",
+    "click>=8.1",
+    "rich>=13.0",
 ]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.30"]
+boosting = ["xgboost>=2.0", "lightgbm>=4.0", "catboost>=1.2"]
+explain = ["shap>=0.44"]
+hpo = ["optuna>=3.0"]
+timeseries = ["pmdarima>=2.0", "statsmodels>=0.14"]
+imbalanced = ["imbalanced-learn>=0.12", "category-encoders>=2.6"]
+all = [
+    "aiml-discovery[anthropic,boosting,explain,hpo,timeseries,imbalanced]",
+]
+
+[project.scripts]
+aiml-discovery = "aiml_discovery.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/RejeyEzekielJeyakumar/AUTOML"
+Issues = "https://github.com/RejeyEzekielJeyakumar/AUTOML/issues"
+
+[tool.setuptools.packages.find]
+include = ["aiml_discovery*", "backend*"]
+
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
