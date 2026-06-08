@@ -191,10 +191,13 @@ export function connectSessionEvents(projectId, sessionId, fromIndex, handlers) 
     )
   );
 
+  let closed = false;
+
   source.addEventListener("step", (event) => {
     handlers.onStep(JSON.parse(event.data));
   });
   source.addEventListener("status", (event) => {
+    closed = true;
     handlers.onStatus(JSON.parse(event.data));
     source.close();
   });
@@ -202,11 +205,16 @@ export function connectSessionEvents(projectId, sessionId, fromIndex, handlers) 
     handlers.onHeartbeat(JSON.parse(event.data));
   });
   source.onerror = () => {
+    if (closed) return;
+    closed = true;
     handlers.onError();
     source.close();
   };
 
-  return () => source.close();
+  return () => {
+    closed = true;
+    source.close();
+  };
 }
 
 export function isTerminalStatus(status) {

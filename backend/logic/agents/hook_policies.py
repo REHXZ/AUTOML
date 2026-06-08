@@ -255,7 +255,7 @@ class SteeringHook(Hook):
                 model=deployment,
                 messages=eval_messages,
                 response_format={"type": "json_object"},
-                max_tokens=400,
+                max_completion_tokens=400,
             )
             # Attribute the eval call's tokens to the scientist.
             if response.usage:

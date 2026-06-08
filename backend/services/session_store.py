@@ -1,25 +1,8 @@
-"""Per-autopilot-session persistence.
+"""Per-autopilot-session persistence backed by SQLite (local) or Supabase (hosted).
 
-Stores everything needed to re-render and continue an AI Autopilot run after
-a refresh: the streamed AutopilotStep events, the LLM message history, the
-notebook entries, and the snapshots of new datasets and training runs created
-during the session.
-
-Layout under each project:
-
-    PROJECT_HOME/{project_id}/autopilot/
-        sessions.json                       # index of sessions
-        {session_id}/
-            session.json                    # metadata + strategy_summary
-            steps.jsonl                     # one AutopilotStep per line
-            messages.jsonl                  # LLM conversation history
-            notebook.json                   # AgentContext.notebook entries
-            new_datasets.json               # DatasetInfo dicts produced here
-            training_runs.json              # training_run dicts produced here
-
-steps.jsonl and messages.jsonl are append-only so partial runs survive crashes.
-Steps with Plotly figures inside ``step.data`` round-trip through
-``fig.to_json()``.
+Replaces the previous file-based approach (JSON/JSONL under PROJECT_HOME).
+The public API — SessionWriter, load_session, list_sessions, etc. — is unchanged
+so all callers (routes, agents) continue to work without modification.
 """
 
 from __future__ import annotations
@@ -32,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.logic.agents.base import AutopilotStep, to_json_safe
+from backend.services.db import get_backend
 from backend.services.project_store import DatasetInfo, ProjectStore
 
 log = logging.getLogger(__name__)
@@ -42,20 +26,17 @@ def _utc_now() -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Step <-> JSON helpers
+# Step <-> JSON helpers  (unchanged from original)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 def step_to_jsonable(step: AutopilotStep) -> dict[str, Any]:
-    """Serialise an AutopilotStep, replacing any live Plotly Figure with its
-    JSON spec under ``data["figure_json"]``.
-    """
     raw_data = dict(step.data or {})
     figure = raw_data.pop("figure", None)
     if figure is not None:
         try:
             raw_data["figure_json"] = figure.to_json()
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:
             log.warning("step_to_jsonable | figure.to_json failed: %s", exc)
     return {
         "index": step.index,
@@ -69,16 +50,12 @@ def step_to_jsonable(step: AutopilotStep) -> dict[str, Any]:
 
 
 def step_from_jsonable(payload: dict[str, Any]) -> AutopilotStep:
-    """Rebuild an AutopilotStep, re-hydrating any ``figure_json`` back into a
-    live Plotly Figure under ``data["figure"]``.
-    """
     data = dict(payload.get("data") or {})
     if "figure_json" in data:
         try:
             import plotly.io as pio
-
             data["figure"] = pio.from_json(data.pop("figure_json"))
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:
             log.warning("step_from_jsonable | pio.from_json failed: %s", exc)
             data.pop("figure_json", None)
     return AutopilotStep(
@@ -93,7 +70,8 @@ def step_from_jsonable(payload: dict[str, Any]) -> AutopilotStep:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Layout helpers
+# Compatibility shims — session_store used to expose path helpers used by
+# old code; keep them pointing at the project cache dir so nothing breaks.
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -105,51 +83,8 @@ def session_path(store: ProjectStore, project_id: str, session_id: str) -> Path:
     return autopilot_root(store, project_id) / session_id
 
 
-def _index_path(store: ProjectStore, project_id: str) -> Path:
-    return autopilot_root(store, project_id) / "sessions.json"
-
-
-def _read_json(path: Path, default: Any) -> Any:
-    if not path.exists():
-        return default
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except json.JSONDecodeError:
-        log.warning("session_store | malformed JSON at %s — using default", path)
-        return default
-
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, default=str)
-
-
-def _append_jsonl(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, default=str) + "\n")
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                log.warning("session_store | bad JSONL line in %s — skipped", path)
-    return rows
-
-
 # ──────────────────────────────────────────────────────────────────────────────
-# Index management
+# Session index
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -165,55 +100,25 @@ class SessionRecord:
 
 
 def list_sessions(store: ProjectStore, project_id: str) -> list[SessionRecord]:
-    items = _read_json(_index_path(store, project_id), default=[])
-    out: list[SessionRecord] = []
-    for item in items or []:
-        out.append(
-            SessionRecord(
-                session_id=str(item.get("session_id", "")),
-                created_at=str(item.get("created_at", "")),
-                updated_at=str(item.get("updated_at", "")),
-                user_goal=str(item.get("user_goal", "")),
-                title=str(item.get("title", "") or item.get("user_goal", "") or item.get("session_id", "")),
-                status=str(item.get("status", "unknown")),
-                step_count=int(item.get("step_count", 0) or 0),
-            )
+    rows = get_backend().list_sessions(project_id)
+    records = [
+        SessionRecord(
+            session_id=str(r.get("id", "")),
+            created_at=str(r.get("created_at", "")),
+            updated_at=str(r.get("updated_at", "")),
+            user_goal=str(r.get("user_goal", "")),
+            title=str(r.get("title") or r.get("user_goal") or r.get("id", "")),
+            status=str(r.get("status", "unknown")),
+            step_count=int(r.get("step_count") or 0),
         )
-    out.sort(key=lambda r: r.updated_at, reverse=True)
-    return out
-
-
-def _upsert_index(
-    store: ProjectStore,
-    project_id: str,
-    session_id: str,
-    **updates: Any,
-) -> None:
-    path = _index_path(store, project_id)
-    items: list[dict[str, Any]] = _read_json(path, default=[]) or []
-    found = False
-    for item in items:
-        if item.get("session_id") == session_id:
-            item.update(updates)
-            found = True
-            break
-    if not found:
-        record = {"session_id": session_id}
-        record.update(updates)
-        items.append(record)
-    _write_json(path, items)
+        for r in rows
+    ]
+    records.sort(key=lambda r: r.updated_at, reverse=True)
+    return records
 
 
 def delete_session(store: ProjectStore, project_id: str, session_id: str) -> None:
-    """Remove a session directory and its index entry."""
-    import shutil
-
-    path = session_path(store, project_id, session_id)
-    if path.exists():
-        shutil.rmtree(path, ignore_errors=True)
-    items: list[dict[str, Any]] = _read_json(_index_path(store, project_id), default=[]) or []
-    items = [item for item in items if item.get("session_id") != session_id]
-    _write_json(_index_path(store, project_id), items)
+    get_backend().delete_session(project_id, session_id)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -222,11 +127,7 @@ def delete_session(store: ProjectStore, project_id: str, session_id: str) -> Non
 
 
 class SessionWriter:
-    """Append-only writer attached to an AgentContext and AiAutopilot.
-
-    Persists every step and LLM message as it happens. Safe to call many times;
-    each method is a single file append or a small JSON rewrite.
-    """
+    """Append-only writer backed by the active StorageBackend."""
 
     def __init__(
         self,
@@ -241,116 +142,90 @@ class SessionWriter:
         self.project_id = project_id
         self.session_id = session_id
         self.user_goal = user_goal
-        self._dir = session_path(store, project_id, session_id)
-        self._dir.mkdir(parents=True, exist_ok=True)
-
-        self._steps_file = self._dir / "steps.jsonl"
-        self._messages_file = self._dir / "messages.jsonl"
-        self._session_file = self._dir / "session.json"
-        self._notebook_file = self._dir / "notebook.json"
-        self._new_datasets_file = self._dir / "new_datasets.json"
-        self._training_runs_file = self._dir / "training_runs.json"
+        self._backend = get_backend()
 
         now = created_at or _utc_now()
-        existing = _read_json(self._session_file, default=None)
+        existing = self._backend.get_session(project_id, session_id)
         if existing is None:
-            payload = {
-                "session_id": session_id,
-                "project_id": project_id,
-                "user_goal": user_goal,
-                "status": "running",
-                "strategy_summary": "",
-                "created_at": now,
-                "updated_at": now,
-            }
+            self._backend.upsert_session(
+                project_id, session_id,
+                user_goal=user_goal,
+                title=(user_goal or session_id)[:80],
+                status="running",
+                strategy_summary="",
+                step_count=0,
+                created_at=now,
+                updated_at=now,
+            )
+            self._step_count = 0
         else:
-            payload = dict(existing)
-            payload["updated_at"] = now
-            payload.setdefault("status", "running")
-        _write_json(self._session_file, payload)
-
-        _upsert_index(
-            store,
-            project_id,
-            session_id,
-            user_goal=user_goal,
-            title=(user_goal or session_id)[:80],
-            created_at=payload.get("created_at", now),
-            updated_at=payload.get("updated_at", now),
-            status=payload.get("status", "running"),
-            step_count=payload.get("step_count", 0),
-        )
-
-        self._step_count = int(payload.get("step_count", 0))
+            self._backend.upsert_session(project_id, session_id, updated_at=now)
+            self._step_count = int(existing.get("step_count") or 0)
 
     def append_step(self, step: AutopilotStep) -> None:
         try:
-            _append_jsonl(self._steps_file, step_to_jsonable(step))
+            self._backend.append_step(
+                self.session_id,
+                json.dumps(step_to_jsonable(step), default=str),
+            )
             self._step_count += 1
-            self._touch(step_count=self._step_count)
+            self._backend.upsert_session(
+                self.project_id, self.session_id,
+                step_count=self._step_count,
+                updated_at=_utc_now(),
+            )
         except Exception as exc:
             log.warning("SessionWriter.append_step failed: %s", exc)
 
     def append_message(self, message: dict[str, Any]) -> None:
         try:
-            _append_jsonl(self._messages_file, to_json_safe(message))
+            self._backend.append_message(
+                self.session_id,
+                json.dumps(to_json_safe(message), default=str),
+            )
         except Exception as exc:
             log.warning("SessionWriter.append_message failed: %s", exc)
 
     def patch_ask_answers(self, step_index: int, answers: list[str]) -> None:
-        """Re-write an ``ask`` step so its captured user answers are persisted."""
         try:
-            _append_jsonl(
-                self._steps_file,
-                {"_patch": True, "index": step_index, "answers": answers},
-            )
-            self._touch()
+            patch = {"_patch": True, "index": step_index, "answers": answers}
+            self._backend.append_step(self.session_id, json.dumps(patch, default=str))
+            self._backend.upsert_session(self.project_id, self.session_id, updated_at=_utc_now())
         except Exception as exc:
             log.warning("SessionWriter.patch_ask_answers failed: %s", exc)
 
     def save_notebook(self, notebook: list[str]) -> None:
-        _write_json(self._notebook_file, list(notebook))
+        self._backend.save_notebook(self.session_id, json.dumps(list(notebook), default=str))
 
     def save_new_datasets(self, datasets: list[DatasetInfo]) -> None:
-        _write_json(self._new_datasets_file, [d.to_dict() for d in datasets])
-
-    def save_training_runs(self, runs: list[dict[str, Any]]) -> None:
-        _write_json(self._training_runs_file, to_json_safe(runs))
-
-    def set_strategy_summary(self, summary: str) -> None:
-        meta = _read_json(self._session_file, default={}) or {}
-        meta["strategy_summary"] = summary
-        meta["updated_at"] = _utc_now()
-        _write_json(self._session_file, meta)
-        _upsert_index(self.store, self.project_id, self.session_id, updated_at=meta["updated_at"])
-
-    def set_status(self, status: str) -> None:
-        meta = _read_json(self._session_file, default={}) or {}
-        meta["status"] = status
-        meta["updated_at"] = _utc_now()
-        _write_json(self._session_file, meta)
-        _upsert_index(
-            self.store,
-            self.project_id,
+        self._backend.save_session_datasets(
             self.session_id,
-            status=status,
-            updated_at=meta["updated_at"],
+            json.dumps([d.to_dict() for d in datasets], default=str),
         )
 
-    def _touch(self, **updates: Any) -> None:
-        meta = _read_json(self._session_file, default={}) or {}
-        meta["updated_at"] = _utc_now()
-        for key, value in updates.items():
-            meta[key] = value
-        _write_json(self._session_file, meta)
-        index_updates = {"updated_at": meta["updated_at"]}
-        if "step_count" in updates:
-            index_updates["step_count"] = updates["step_count"]
-        _upsert_index(self.store, self.project_id, self.session_id, **index_updates)
+    def save_training_runs(self, runs: list[dict[str, Any]]) -> None:
+        self._backend.save_session_runs(
+            self.session_id,
+            json.dumps(to_json_safe(runs), default=str),
+        )
+
+    def set_strategy_summary(self, summary: str) -> None:
+        self._backend.upsert_session(
+            self.project_id, self.session_id,
+            strategy_summary=summary,
+            updated_at=_utc_now(),
+        )
+
+    def set_status(self, status: str) -> None:
+        self._backend.upsert_session(
+            self.project_id, self.session_id,
+            status=status,
+            updated_at=_utc_now(),
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Reader — used to resume after refresh
+# Reader — used to resume after a page refresh
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -373,24 +248,25 @@ class LoadedSession:
 def load_session(
     store: ProjectStore, project_id: str, session_id: str
 ) -> LoadedSession:
-    base = session_path(store, project_id, session_id)
-    if not base.exists():
+    backend = get_backend()
+    meta = backend.get_session(project_id, session_id)
+    if meta is None:
         raise FileNotFoundError(f"Autopilot session not found: {session_id}")
 
-    meta = _read_json(base / "session.json", default={}) or {}
-    raw_steps = _read_jsonl(base / "steps.jsonl")
-    raw_messages = _read_jsonl(base / "messages.jsonl")
-    notebook = _read_json(base / "notebook.json", default=[]) or []
-    new_ds_raw = _read_json(base / "new_datasets.json", default=[]) or []
-    runs = _read_json(base / "training_runs.json", default=[]) or []
+    raw_steps = [json.loads(s) for s in backend.get_steps(session_id)]
+    raw_messages = [json.loads(m) for m in backend.get_messages(session_id)]
+    notebook: list[str] = json.loads(backend.get_notebook(session_id))
+    new_ds_raw: list[dict] = json.loads(backend.get_session_datasets(session_id))
+    runs: list[dict] = json.loads(backend.get_session_runs(session_id))
 
+    # Reconstruct steps, merging patch rows onto their target step.
     by_index: dict[int, dict[str, Any]] = {}
     patches: list[dict[str, Any]] = []
     for row in raw_steps:
         if row.get("_patch"):
             patches.append(row)
-            continue
-        by_index[int(row["index"])] = row
+        else:
+            by_index[int(row["index"])] = row
     for patch in patches:
         idx = int(patch.get("index", -1))
         if idx in by_index:
@@ -398,7 +274,7 @@ def load_session(
             data["answers"] = list(patch.get("answers") or [])
             by_index[idx]["data"] = data
 
-    steps = [step_from_jsonable(by_index[i]) for i in sorted(by_index.keys())]
+    steps = [step_from_jsonable(by_index[i]) for i in sorted(by_index)]
 
     new_datasets: list[DatasetInfo] = []
     for item in new_ds_raw:
@@ -432,6 +308,7 @@ __all__ = [
     "LoadedSession",
     "SessionRecord",
     "SessionWriter",
+    "autopilot_root",
     "delete_session",
     "list_sessions",
     "load_session",

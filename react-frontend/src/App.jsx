@@ -199,6 +199,9 @@ export default function App({ user, onSignOut }) {
               error: payload.error ?? current.error
             };
           });
+          if (payload.status === "error" && payload.error) {
+            setError(`Run failed: ${payload.error}`);
+          }
           if (isTerminalStatus(payload.status)) {
             await Promise.all([refreshSessions(id), refreshSession(id, sessionId)]);
           }

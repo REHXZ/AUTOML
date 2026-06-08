@@ -147,6 +147,12 @@ def _drive_job(job: AutopilotJob, answers: list[str] | None) -> None:
                 _finish_job(job, STATUS_IDLE)
                 return
     except Exception as exc:
+        import traceback
+        import logging
+        logging.getLogger(__name__).error(
+            "Autopilot job failed [%s/%s]: %s\n%s",
+            job.project_id, job.session_id, exc, traceback.format_exc()
+        )
         with job.lock:
             job.status = STATUS_ERROR
             job.error = str(exc)

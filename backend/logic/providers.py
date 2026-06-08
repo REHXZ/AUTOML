@@ -33,11 +33,12 @@ PROVIDER_PRESETS: dict[str, dict[str, str]] = {
         "label":          "OpenAI",
     },
     "azure": {
-        "api_key_env":    "OPENAI_API_KEY",
-        "base_url_env":   "OPENAI_API_BASE",
-        "model_env":      "AZURE_OPENAI_DEPLOYMENT",
-        "default_model":  "gpt-4o",
-        "label":          "Azure OpenAI",
+        "api_key_env":      "OPENAI_API_KEY",
+        "base_url_env":     "OPENAI_API_BASE",
+        "model_env":        "AZURE_OPENAI_DEPLOYMENT",
+        "api_version_env":  "AZURE_OPENAI_API_VERSION",
+        "default_model":    "gpt-4o",
+        "label":            "Azure OpenAI",
     },
     "anthropic": {
         "api_key_env":    "ANTHROPIC_API_KEY",
@@ -97,9 +98,10 @@ def provider_from_env(provider: str | None = None) -> ProviderConfig:
     resolved = provider or detect_provider_from_env() or "openai"
     preset = PROVIDER_PRESETS.get(resolved, {})
 
-    api_key   = os.environ.get(preset.get("api_key_env", ""), "").strip()
-    base_url  = os.environ.get(preset.get("base_url_env", ""), "").strip()
-    model     = os.environ.get(preset.get("model_env", ""), "").strip()
+    api_key     = os.environ.get(preset.get("api_key_env", ""), "").strip()
+    base_url    = os.environ.get(preset.get("base_url_env", ""), "").strip()
+    model       = os.environ.get(preset.get("model_env", ""), "").strip()
+    api_version = os.environ.get(preset.get("api_version_env", ""), "").strip()
 
     if resolved == "ollama" and not base_url:
         base_url = preset.get("default_base_url", "http://localhost:11434/v1")
@@ -109,6 +111,7 @@ def provider_from_env(provider: str | None = None) -> ProviderConfig:
         api_key=api_key,
         model=model,
         base_url=base_url,
+        api_version=api_version or "2024-12-01-preview",
     )
 
 
