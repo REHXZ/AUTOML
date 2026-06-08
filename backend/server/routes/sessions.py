@@ -59,12 +59,13 @@ def _resolve_provider_config(body: dict) -> ProviderConfig:
                 base_url=raw_cfg.get("base_url") or env_cfg.base_url,
                 api_version=env_cfg.api_version or raw_cfg.get("api_version") or "2024-12-01-preview",
             )
+        env_cfg = provider_from_env(provider)
         return ProviderConfig(
             provider=provider,
-            api_key=raw_cfg.get("api_key", ""),
-            model=raw_cfg.get("model", ""),
-            base_url=raw_cfg.get("base_url", ""),
-            api_version=raw_cfg.get("api_version", "2024-12-01-preview"),
+            api_key=raw_cfg.get("api_key", "") or env_cfg.api_key,
+            model=raw_cfg.get("model", "") or env_cfg.model,
+            base_url=raw_cfg.get("base_url", "") or env_cfg.base_url,
+            api_version=raw_cfg.get("api_version", "") or os.environ.get("AZURE_OPENAI_API_VERSION", "") or "2024-12-01-preview",
         )
 
     # Legacy: bare api_key field
