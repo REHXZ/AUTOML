@@ -18,9 +18,9 @@ from backend.services.project_store import ProjectStore
 from backend.services.session_store import load_session, step_to_jsonable
 
 
-def event_stream(store_root: str, project_id: str, session_id: str, from_index: int):
+def event_stream(project_id: str, session_id: str, from_index: int):
     """Long-polling SSE generator — yields step, status, and heartbeat events."""
-    store = ProjectStore(store_root)
+    store = ProjectStore()
     sent_indexes: set[int] = set()
 
     while True:
