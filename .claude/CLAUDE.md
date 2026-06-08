@@ -67,6 +67,8 @@ backend/
 │   └── agents/
 │       ├── base.py            # AutopilotStep, AgentContext, BaseAgent
 │       ├── scientist.py       # AimlScientist orchestrator
+│       ├── hooks.py           # HookEvent, HookOutcome, Hook, HookManager
+│       ├── hook_policies.py   # Concrete hooks + default_hook_manager()
 │       ├── eda_agent.py
 │       ├── feature_engineering_agent.py
 │       ├── modeling_agent.py
@@ -107,6 +109,83 @@ The core AI engine is a multi-agent orchestrator that runs CRISP-DM autonomously
 
 All agents extend `BaseAgent` (`backend/logic/agents/base.py`) and yield `AutopilotStep` dataclass instances. The orchestrator thin-façade is `AiAutopilot` (`backend/logic/autopilot.py`).
 
+### Agent Flow
+
+```mermaid
+flowchart TD
+    subgraph ENTRY ["Entry Layer"]
+        FL["Flask REST + SSE\n/api/.../sessions\n/api/.../events\n/api/.../answers"]
+        AP["AiAutopilot  autopilot.py\nbuild client · wire hooks · _tee()"]
+    end
+
+    subgraph HOOKS ["Hook System  hook_policies.py  fires on every LLM call, tool call & delegation"]
+        direction LR
+        H1["StopHook\nprio=1 · BEFORE_LLM\nabort if stop requested"]
+        H2["GuardrailHook\nprio=5 · BEFORE_TOOL\nvalidate / modify args"]
+        H3["TokenAccounting\nprio=10 · AFTER_LLM\ntrack token usage"]
+        H4["LoggingHook\nprio=20 · all events\nstructured logs"]
+        H5["ModelTesterGate\nprio=30 · BEFORE_DELEGATE:Review\nauto-run tester first"]
+        H6["SteeringHook\nprio=50 · AFTER_DELEGATE\nretask if unsatisfied"]
+    end
+
+    subgraph SCI ["AimlScientist — Orchestrator  ≤60 iterations  scientist.py"]
+        LOOP["LLM Tool-Calling Loop"]
+        subgraph CRISP ["CRISP-DM Lifecycle  soft phases via set_phase()"]
+            P1["1 · Business Understanding"]
+            P2["2 · Data Understanding"]
+            P3["3 · Data Preparation"]
+            P4["4 · Modeling"]
+            P5["5 · Evaluation"]
+            P6["6 · Iteration / Rewind"]
+        end
+        P1 --> P2 --> P3 --> P4 --> P5 --> P6
+        P6 -- "rewind to data prep" --> P3
+        P6 -- "rewind to modeling" --> P4
+    end
+
+    subgraph AGENTS ["Specialist Agents  all extend BaseAgent · base.py"]
+        EDA["EdaAgent\nprofile data · Plotly charts\nvision-capable"]
+        FEA["FeatureEngineeringAgent\n50+ dataset transforms"]
+        MOD["ModelingAgent\n25+ scikit-learn models\nBaseline AutoML"]
+        TST["ModelTesterAgent\nheld-out evaluation\ndeterministic · no steering"]
+        REV["ReviewAgent\nleakage · imbalance\noverfitting critique"]
+        FIN["FineTuningAgent\niterative improvements"]
+        RES["ResearcherAgent\nweb search · benchmarks"]
+        DFT["DriftAgent\nfeature / label\ndrift detection"]
+    end
+
+    subgraph PERSIST ["Persistence  session_store.py"]
+        SW["SessionWriter\nsteps · messages · notebook\ndatasets · training runs"]
+    end
+
+    FL --> AP
+    AP --> LOOP
+    AP -- "_tee() persists each step" --> SW
+
+    LOOP -- "delegate_to_eda" --> EDA
+    LOOP -- "delegate_to_feature_engineering" --> FEA
+    LOOP -- "delegate_to_modeling" --> MOD
+    LOOP -- "delegate_to_model_tester\ndeterministic" --> TST
+    LOOP -- "delegate_to_review" --> REV
+    LOOP -- "delegate_to_fine_tuning" --> FIN
+    LOOP -- "delegate_to_researcher" --> RES
+    LOOP -- "delegate_to_drift_detection" --> DFT
+
+    LOOP -- "ask_user → SSE pause" --> USR["User (browser)"]
+    USR -- "POST .../answers\ncontinue_with()" --> LOOP
+
+    HOOKS -. "BEFORE/AFTER_LLM · BEFORE/AFTER_TOOL\nBEFORE/AFTER_DELEGATE" .-> LOOP
+    H5 -. "auto-runs tester\nbefore Review" .-> TST
+    H6 -. "RETRY with updated\ninstructions" .-> LOOP
+
+    MOD --> TST
+    TST --> REV
+    REV --> FIN
+    FIN -- "repeat ≥2 rounds until\n<1% metric improvement" --> REV
+
+    AGENTS -- "yields AutopilotStep\nthought · tool_call · chart · training · …" --> SW
+```
+
 ### Session Model
 
 Each autopilot run is a **session** with a background worker thread. Steps are persisted to disk and streamed to the frontend via SSE. Sessions can be resumed after a restart. The full flow:
@@ -131,6 +210,8 @@ Every agent step produces a Jupyter cell with runnable code (Plotly Express, sci
 | `backend/server/routes/sessions.py` | Autopilot session endpoints + SSE streaming |
 | `backend/logic/agents/scientist.py` | LLM orchestrator loop |
 | `backend/logic/agents/base.py` | `AgentContext`, `AutopilotStep`, `BaseAgent` |
+| `backend/logic/agents/hooks.py` | Hook framework: events, outcomes, `HookManager` |
+| `backend/logic/agents/hook_policies.py` | Concrete hooks (stop, guardrail, steering, gate, logging, tokens) |
 | `backend/logic/ingestion.py` | Dataset loading (CSV, Excel, JSON, SQLite) |
 | `backend/logic/training.py` | AutoML training with optional XGBoost/LGB/CatBoost |
 | `backend/logic/notebook_export.py` | Jupyter notebook generation |

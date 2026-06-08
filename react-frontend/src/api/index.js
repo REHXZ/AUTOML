@@ -102,12 +102,12 @@ export function getSession(projectId, sessionId) {
   );
 }
 
-export function startSession(projectId, userGoal) {
+export function startSession(projectId, userGoal, apiKey) {
   return request(
     `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions`,
     {
       method: "POST",
-      body: JSON.stringify({ user_goal: userGoal })
+      body: JSON.stringify({ user_goal: userGoal, ...(apiKey ? { api_key: apiKey } : {}) })
     }
   );
 }
@@ -136,12 +136,12 @@ export function submitAnswers(projectId, sessionId, answers) {
   );
 }
 
-export function sendFollowUp(projectId, sessionId, message) {
+export function sendFollowUp(projectId, sessionId, message, apiKey) {
   return request(
     `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/messages`,
     {
       method: "POST",
-      body: JSON.stringify({ message })
+      body: JSON.stringify({ message, ...(apiKey ? { api_key: apiKey } : {}) })
     }
   );
 }

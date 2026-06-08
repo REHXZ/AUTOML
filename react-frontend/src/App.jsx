@@ -40,6 +40,8 @@ import {
   visibleActivitySteps
 } from "./utils";
 
+const API_KEY_STORAGE = "aiml-autopilot-apikey";
+
 const TWEAK_KEY = "aiml-autopilot-tweaks";
 const DEFAULT_TWEAKS = {
   view: "graph",
@@ -62,6 +64,14 @@ function loadTweaks() {
 }
 
 export default function App() {
+  const [apiKey, setApiKeyState] = useState(() => {
+    try { return window.localStorage?.getItem(API_KEY_STORAGE) || ""; } catch { return ""; }
+  });
+  const setApiKey = (key) => {
+    setApiKeyState(key);
+    try { window.localStorage?.setItem(API_KEY_STORAGE, key); } catch { /* ignore */ }
+  };
+
   const [health, setHealth] = useState(null);
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
@@ -350,7 +360,7 @@ export default function App() {
     setError(null);
     setNotice(null);
     try {
-      const job = await startSession(projectId, goal.trim());
+      const job = await startSession(projectId, goal.trim(), apiKey.trim());
       const loaded = await refreshSession(projectId, job.session_id);
       await refreshSessions(projectId);
       openEventStream(projectId, loaded.session_id, maxStepIndex(loaded.steps));
@@ -407,7 +417,7 @@ export default function App() {
     setError(null);
     setNotice(null);
     try {
-      await sendFollowUp(projectId, activeSession.session_id, followUp.trim());
+      await sendFollowUp(projectId, activeSession.session_id, followUp.trim(), apiKey.trim());
       const loaded = await refreshSession(projectId, activeSession.session_id);
       openEventStream(projectId, activeSession.session_id, maxStepIndex(loaded.steps));
       setFollowUp("");
@@ -461,7 +471,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      await sendFollowUp(projectId, activeSession.session_id, text);
+      await sendFollowUp(projectId, activeSession.session_id, text, apiKey.trim());
       const loaded = await refreshSession(projectId, activeSession.session_id);
       openEventStream(projectId, activeSession.session_id, maxStepIndex(loaded.steps));
       setFollowUp("");
@@ -633,6 +643,8 @@ export default function App() {
               health={health}
               goal={goal}
               onGoal={setGoal}
+              apiKey={apiKey}
+              onApiKey={setApiKey}
               onStart={() => void handleStart()}
               loading={loading}
               disabledLaunch={disabledLaunch}
@@ -647,6 +659,8 @@ export default function App() {
         <TweaksPanel
           tweaks={tweaks}
           onChange={setTweak}
+          apiKey={apiKey}
+          onApiKey={setApiKey}
           onClose={() => setTweaksOpen(false)}
         />
       ) : null}

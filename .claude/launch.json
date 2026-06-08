@@ -9,8 +9,8 @@
     },
     {
       "name": "Vite React (frontend)",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "npm.cmd", "--prefix", "react-frontend", "run", "dev"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["react-frontend/node_modules/vite/bin/vite.js", "react-frontend", "--port", "5173", "--configLoader", "native"],
       "port": 5173
     },
     {

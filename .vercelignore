@@ -1,0 +1,11 @@
+backend/
+venv/
+.venv/
+tests/
+docs/
+logs/
+mcp_server/
+searxng-config/
+requirements.txt
+pyproject.toml
+docker-compose.yml

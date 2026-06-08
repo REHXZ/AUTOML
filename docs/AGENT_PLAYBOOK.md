@@ -202,7 +202,7 @@ All Plotly charts are runnable in the notebook with the exact same code used dur
 The Scientist asks questions only when genuinely ambiguous. For maximum control, include in your initial prompt:
 
 - **Target column name** (or description if it needs to be derived)
-- **Task type** (classification / regression / forecasting)  
+- **Task type** (classification / regression / forecasting)
 - **Primary metric** (e.g., "optimise for F1 on the positive class")
 - **Business constraints** (e.g., "false positives are 5× more costly than false negatives")
 - **Time column** (for forecasting)
@@ -212,4 +212,62 @@ The more context you provide upfront, the fewer questions the Scientist asks and
 
 ---
 
-*Last updated: 2026-06-02 — branch `claude/intelligent-sagan-G02fc`*
+## 8. Extending the System with Hooks
+
+The autopilot exposes a **hook lifecycle** at every major control point (LLM calls, tool dispatches, sub-agent delegations). Hooks let you add cross-cutting behaviour — auditing, rate-limiting, domain guardrails, custom steering logic — without modifying any agent code.
+
+### Quick start
+
+```python
+from backend.logic.agents.hooks import Hook, HookContext, HookEvent, HookOutcome
+from backend.logic.autopilot import AiAutopilot
+
+class CostGuardHook(Hook):
+    """Abort the run if cumulative prompt tokens exceed a budget."""
+    name = "cost_guard"
+    priority = 2                # run immediately after StopHook
+    events = frozenset({HookEvent.BEFORE_LLM})
+
+    def __init__(self, max_tokens: int = 500_000):
+        self._max = max_tokens
+
+    def handle(self, hc: HookContext):
+        yield from ()
+        total = sum(
+            u.get("prompt_tokens", 0)
+            for u in hc.ctx.agent_token_usage.values()
+        )
+        if total >= self._max:
+            return HookOutcome.abort(reason=f"token budget {self._max} exceeded (used {total})")
+        return HookOutcome.cont()
+
+# Register before the first step is produced:
+pilot = AiAutopilot(api_key=..., project_id=..., store=...)
+pilot._ctx.hooks.register(CostGuardHook(max_tokens=200_000))
+```
+
+### Hook event reference
+
+See `backend/logic/agents/hooks.py` for the full `HookEvent` enum and `HookContext` dataclass fields. See `backend/logic/agents/hook_policies.py` for the six built-in hooks as worked examples.
+
+### Outcome decision precedence
+
+When multiple hooks fire on the same event their outcomes are merged:
+
+```
+ABORT (4) > RETRY (3) > SKIP (2) > MODIFY (1) > CONTINUE (0)
+```
+
+Two `MODIFY` outcomes on the same event accumulate their fields (later hook's non-None fields override earlier ones).
+
+### Built-in hooks you can subclass
+
+| Class | File | Common reason to subclass |
+|---|---|---|
+| `GuardrailHook` | `hook_policies.py` | Add domain-specific `BLOCKED_TOOLS` or column validation |
+| `SteeringHook` | `hook_policies.py` | Change steering LLM prompt or satisfaction threshold |
+| `LoggingHook` | `hook_policies.py` | Route logs to a remote sink (Datadog, CloudWatch) |
+
+---
+
+*Last updated: 2026-06-07*

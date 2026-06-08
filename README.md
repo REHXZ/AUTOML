@@ -146,11 +146,17 @@ Common AI Autopilot endpoints (full reference in [docs/AUTOPILOT_API.md](docs/AU
 backend/
 ├── config/settings.py          # APP_NAME, PROJECT_HOME, supported extensions
 ├── logic/
-│   ├── autopilot.py            # AiAutopilot facade
+│   ├── autopilot.py            # AiAutopilot facade — wires agents + hook manager
 │   ├── training.py             # AutoML training (25+ models)
 │   ├── ingestion.py            # Dataset loading (CSV/Excel/JSON/SQLite)
 │   ├── notebook_export.py      # Jupyter .ipynb generation
-│   └── agents/                 # EDA, FE, Modeling, Review, FineTuning, Drift...
+│   └── agents/
+│       ├── base.py             # AgentContext, AutopilotStep, BaseAgent
+│       ├── hooks.py            # Hook lifecycle framework (events, outcomes, manager)
+│       ├── hook_policies.py    # Built-in policies: token accounting, stop, steering,
+│       │                       # model-tester gate, guardrails, logging
+│       ├── scientist.py        # Orchestrator — fires BEFORE/AFTER_DELEGATE per sub-agent
+│       └── ...                 # EDA, FE, Modeling, Review, FineTuning, Drift agents
 ├── server/
 │   ├── app.py                  # Flask app + blueprint registration
 │   ├── job_manager.py          # Background worker threads
@@ -192,8 +198,9 @@ pytest tests/test_training.py -v
 
 ## Further reading
 
-- [docs/AUTOPILOT.md](docs/AUTOPILOT.md) — agent roles, lifecycle phases, and how the orchestration works.
+- [docs/AUTOPILOT.md](docs/AUTOPILOT.md) — agent roles, lifecycle phases, hook system, and how the orchestration works.
 - [docs/AUTOPILOT_API.md](docs/AUTOPILOT_API.md) — full HTTP / SSE API reference.
+- [docs/AGENT_PLAYBOOK.md](docs/AGENT_PLAYBOOK.md) — troubleshooting guide and hook extension reference.
 - [react-frontend/README.md](react-frontend/README.md) — frontend dev notes.
 
 ## License

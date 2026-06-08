@@ -7,46 +7,104 @@ The AI Autopilot is a multi-agent AutoML system that takes your dataset and a pl
 ## Architecture Overview
 
 ```
-UI (app.py)
+AiAutopilot  (backend/logic/autopilot.py)          ← thin façade; handles sessions
+    │  registers HookManager on AgentContext
     │
     ▼
-AiAutopilot  (ai_autopilot.py)           ← thin façade; handles sessions
+AimlScientist  (backend/logic/agents/scientist.py) ← orchestrator LLM (up to 60 iters)
+    │  fires BEFORE_DELEGATE / AFTER_DELEGATE
     │
-    ▼
-AimlScientist  (agents/scientist.py)     ← orchestrator LLM
-    │
-    ├──► EdaAgent                        ← data profiling & charts
-    ├──► FeatureEngineeringAgent         ← dataset transformations
-    ├──► ModelingAgent                   ← AutoML training runs
-    ├──► ReviewAgent                     ← critiques results
-    ├──► FineTuningAgent                 ← iterates on improvements
-    └──► ResearcherAgent                 ← web search for domain gaps
+    ├──► EdaAgent                    ← data profiling & charts
+    ├──► FeatureEngineeringAgent     ← 50+ dataset transformations
+    ├──► ModelingAgent               ← AutoML training (25+ models)
+    ├──► ModelTesterAgent            ← held-out test-set evaluation
+    ├──► ReviewAgent                 ← critiques runs, flags leakage
+    ├──► FineTuningAgent             ← iterates on improvements
+    ├──► ResearcherAgent             ← web search for domain gaps
+    └──► DriftAgent                  ← distributional shift detection
+
+Each sub-agent call passes through the Hook Lifecycle:
+    BEFORE_DELEGATE → [agent runs] → AFTER_DELEGATE (steering / retry)
+    BEFORE_LLM      → [API call]   → AFTER_LLM (token accounting)
+    BEFORE_TOOL     → [dispatch]   → AFTER_TOOL (guardrails / modify)
 ```
 
-All agents share a single `AgentContext` (notebook, datasets, training runs) and stream `AutopilotStep` events up to the UI in real time.
+All agents share a single `AgentContext` (notebook, datasets, training runs, hook manager) and stream `AutopilotStep` events up to the UI in real time through `AiAutopilot._tee()`.
 
 ---
 
-## API Surface
+## Hook Lifecycle System
 
-`aiml_discovery/api.py` exposes the same `AiAutopilot` engine over HTTP with FastAPI. Start it locally with:
+Every LLM call and tool dispatch in every agent passes through a shared `HookManager` stored on `AgentContext.hooks`. This enables cross-cutting behaviour — observability, flow control, guardrails — to be registered once as independent policies rather than duplicated inline.
 
-```powershell
-uvicorn aiml_discovery.api:app --reload
+### Lifecycle events
+
+| Event | Fires when | Can control |
+|---|---|---|
+| `BEFORE_LLM` | Before each `chat.completions.create()` | Abort the loop |
+| `AFTER_LLM` | After a successful API response | Observe / accumulate |
+| `BEFORE_TOOL` | Before `dispatch(name, args)` | Modify args, Skip, Abort |
+| `AFTER_TOOL` | After dispatch returns | Modify result |
+| `TOOL_ERROR` | When dispatch raises | Skip (recover with canned result) |
+| `BEFORE_DELEGATE` | Before Scientist spawns a sub-agent | Modify instructions, Skip, Abort |
+| `AFTER_DELEGATE` | After sub-agent `.run()` returns | Retry with new instructions |
+| `STEP_EMITTED` | Every `AutopilotStep` through `_tee` | Observe only |
+| `RUN_START` / `RUN_END` | Agent `.run()` entry / exit | Observe only |
+| `ASK_USER` | Scientist emits an `ask` pause | Observe only |
+
+### Hook outcomes
+
+A hook returns a `HookOutcome` with one of five decisions (merged in precedence order):
+
+```
+CONTINUE (0) < MODIFY (1) < SKIP (2) < RETRY (3) < ABORT (4)
 ```
 
-The API uses the same local project store and session files as the Streamlit UI. A run is session-based:
+- **CONTINUE** — do nothing special.
+- **MODIFY** — rewrite tool `args`, delegation `instructions`, or `result`.
+- **SKIP** — short-circuit: use the hook's canned `result` instead of calling the real action.
+- **RETRY** — re-run the sub-agent (delegation only) with optionally new `instructions`.
+- **ABORT** — break the enclosing LLM loop immediately.
 
-1. `POST /api/projects/{project_id}/autopilot/sessions` creates a session and starts a background worker.
-2. `GET /api/projects/{project_id}/autopilot/sessions/{session_id}` returns the persisted steps, status, notebook, datasets, training runs, and final strategy summary.
-3. `GET /api/projects/{project_id}/autopilot/sessions/{session_id}/events` streams Server-Sent Events for new steps until the run waits for input, completes, or errors.
-4. `POST /api/projects/{project_id}/autopilot/sessions/{session_id}/answers` resumes a run paused by `ask_user`.
-5. `POST /api/projects/{project_id}/autopilot/sessions/{session_id}/messages` sends follow-up work after a session has completed.
-6. `GET /api/projects/{project_id}/autopilot/sessions/{session_id}/notebook` downloads the generated Jupyter notebook.
+### Built-in policies (`backend/logic/agents/hook_policies.py`)
 
-`OPENAI_API_KEY` can be loaded from `.env`, or `api_key` can be supplied in the start/follow-up request body.
+| Hook | Priority | Event(s) | Replaces |
+|---|---|---|---|
+| `StopHook` | 1 | `BEFORE_LLM` | Inline `should_stop` checks (duplicated in 2 loops) |
+| `GuardrailHook` | 5 | `BEFORE_TOOL` | — (new capability) |
+| `TokenAccountingHook` | 10 | `AFTER_LLM` | Inline `response.usage` blocks (duplicated in 2 loops) |
+| `LoggingHook` | 20 | all major events | Scattered `log.info/debug` calls |
+| `ModelTesterGateHook` | 30 | `BEFORE_DELEGATE` | Hardcoded "run Tester before Review" block |
+| `SteeringHook` | 50 | `AFTER_DELEGATE` | `_steer_check` / `_delegate_with_steering` |
 
-Note: sessions are persisted to disk, but an active `ask_user` pause keeps the live Python generator in the API process. If the API process restarts while a run is waiting for answers, start a new run or continue from a completed/idle session.
+All six are registered by `default_hook_manager()`, which `AiAutopilot.__init__` calls automatically.
+
+### Writing a custom hook
+
+```python
+from backend.logic.agents.hooks import Hook, HookContext, HookEvent, HookOutcome
+
+class AuditHook(Hook):
+    name = "audit"
+    priority = 90          # run late (after built-in hooks)
+    events = frozenset({HookEvent.AFTER_TOOL, HookEvent.AFTER_DELEGATE})
+
+    def handle(self, hc: HookContext):
+        # Hooks are generators — yield AutopilotStep objects if needed.
+        yield from ()
+        print(f"[audit] agent={hc.agent_name} event={hc.event.value}")
+        return HookOutcome.cont()
+```
+
+Register before starting a run:
+
+```python
+from backend.logic.agents import default_hook_manager
+from backend.logic.autopilot import AiAutopilot
+
+pilot = AiAutopilot(api_key=..., project_id=..., store=...)
+pilot._ctx.hooks.register(AuditHook())
+```
 
 ---
 
@@ -56,40 +114,43 @@ Note: sessions are persisted to disk, but an active `ask_user` pause keeps the l
 
 `AiAutopilot.__init__` either starts a fresh session or reloads a prior one from disk. Resumed sessions restore the LLM conversation history, notebook, datasets, and training runs so the scientist can continue exactly where it left off.
 
+On every start (fresh or resumed) a `HookManager` is built with the default policies and attached to `AgentContext.hooks`. The OpenAI client and deployment name are also stored on `AgentContext` so hook policies can spawn sub-agents (e.g. `ModelTesterGateHook`).
+
 ### 2. The Scientist Orchestrates
 
 `AimlScientist.run()` sends an initial prompt to the orchestrator LLM that includes:
 
-- Project name
-- Dataset index (ids, row/col counts, types)
+- Project name and dataset index (ids, row/col counts, types)
 - The user's stated goal
 
-The Scientist then loops (up to 60 iterations), deciding at each step which specialist to call next.
+The Scientist loops (up to 60 iterations), deciding at each step which specialist to call next. Every tool call fires `BEFORE_TOOL` / `AFTER_TOOL`; every sub-agent delegation fires `BEFORE_DELEGATE` / `AFTER_DELEGATE`.
 
 ### 3. Typical Flow
 
 The Scientist is not locked to a fixed sequence — it uses its judgement — but the default happy path is:
 
 ```
-ask_user?            ← only if the target column is genuinely ambiguous
+ask_user?              ← only if the target column is genuinely ambiguous
     ↓
 delegate_to_researcher  (optional — background domain research)
     ↓
-delegate_to_eda      ← profiles every dataset, produces charts
-    ↓
-record_observation   ← Scientist's reading of the EDA
+delegate_to_eda        ← profiles every dataset, produces charts
+    ↓  (SteeringHook may retry with refined instructions)
+record_observation     ← Scientist's reading of the EDA
     ↓
 delegate_to_feature_engineering  ← builds 1-2 cleaned/derived datasets
     ↓
-delegate_to_modeling ← baseline AutoML run
+delegate_to_modeling   ← baseline AutoML run
     ↓
-delegate_to_review   ← critiques the baseline
+delegate_to_model_tester  ← held-out test evaluation
+    ↓  (ModelTesterGateHook also fires here when review is next)
+delegate_to_review     ← critiques the baseline
     ↓
-delegate_to_fine_tuning  ← tries the top recommendations
+delegate_to_fine_tuning  ← tries top recommendations
     ↓
   (loop Review → Fine Tuning at least twice, until < 1 % metric gain)
     ↓
-finalize_strategy    ← comprehensive markdown report, run ends
+finalize_strategy      ← comprehensive markdown report, run ends
 ```
 
 ### 4. What Each Agent Does
@@ -97,28 +158,24 @@ finalize_strategy    ← comprehensive markdown report, run ends
 | Agent | Role |
 |---|---|
 | **EDA Agent** | Profiles columns, detects types and missingness, produces Plotly charts. Has vision — it can "see" the charts it generates and comment on them. |
-| **Feature Engineering Agent** | Applies transformations: drop/select columns, one-hot encoding, log transforms, bin numeric, interactions, polynomial features, groupby-aggregate, lag/lead/rolling windows for time series, dense panel construction, and raw Python execution. |
-| **Modeling Agent** | Runs AutoML training via `train_automl`. Supports random splits (classification/regression) and chronological holdout (time-series forecasting). Produces leaderboard, feature-importance, predicted-vs-actual, and residual charts. |
+| **Feature Engineering Agent** | Applies 50+ transformations: encoding, imputation, scaling, binning, interactions, polynomial features, groupby-aggregate, lag/lead/rolling windows, dense panel construction. |
+| **Modeling Agent** | Runs AutoML training via `train_automl`. Supports random splits (classification/regression) and chronological holdout (time-series). Produces leaderboard, feature-importance, and diagnostic charts. |
+| **Model Tester Agent** | Loads saved pipelines and evaluates them against held-out test CSVs. Always runs before Review so the Review Agent sees real out-of-sample metrics. |
 | **Review Agent** | Reads training run metrics, leaderboard, and notebook. Identifies issues (leakage, underfitting, concept drift) and proposes concrete next experiments. |
 | **Fine Tuning Agent** | Acts on Review's recommendations: retrains with revised features, hyperparameters, or different datasets and compares against the prior best. |
-| **Researcher Agent** | Searches the web (via SearXNG) to fill domain knowledge gaps, look up ML technique benchmarks, or clarify unfamiliar data encodings. Findings are appended to the shared notebook. |
+| **Researcher Agent** | Searches the web to fill domain knowledge gaps, look up ML technique benchmarks, or clarify unfamiliar data encodings. Findings are appended to the shared notebook. |
+| **Drift Agent** | Detects distributional shifts (PSI / KS test) between a reference and production dataset. |
 
 ### 5. Asking the User
 
-The Scientist calls `ask_user` sparingly — only when the answer materially changes the plan and cannot be inferred from the data. Examples:
-
-- Which of two plausible target columns to optimise
-- A business-side trade-off (false-positive cost vs. false-negative cost)
-- Domain-specific definitions only the user can provide
-
-Every question includes the Scientist's own recommendation and 1-2 alternatives so the user can accept the default with a single click.
+The Scientist calls `ask_user` sparingly — only when the answer materially changes the plan and cannot be inferred from the data. Every question includes the Scientist's own recommendation and 1–2 alternatives so the user can accept the default with a single click.
 
 ### 6. Stopping Criteria
 
 The Scientist keeps iterating until:
 
 - At least 2 Review + Fine Tuning rounds have run, **and**
-- The last round's best metric improved by < 1 % over the previous best (plateaued), **or**
+- The last round's best metric improved by < 1 % over the previous best, **or**
 - Review flags the data as at ceiling quality with no further levers available
 
 ### 7. Session Persistence
@@ -156,17 +213,21 @@ This report is displayed in the UI and persisted to `session.json`.
 
 | File | Purpose |
 |---|---|
-| [aiml_discovery/ai_autopilot.py](../aiml_discovery/ai_autopilot.py) | Public façade — entry point for the UI |
-| [aiml_discovery/agents/scientist.py](../aiml_discovery/agents/scientist.py) | Orchestrator LLM loop and tool dispatch |
-| [aiml_discovery/agents/base.py](../aiml_discovery/agents/base.py) | `AgentContext`, `AutopilotStep`, `BaseAgent`, shared utilities |
-| [aiml_discovery/agents/eda_agent.py](../aiml_discovery/agents/eda_agent.py) | EDA Agent |
-| [aiml_discovery/agents/feature_engineering_agent.py](../aiml_discovery/agents/feature_engineering_agent.py) | Feature Engineering Agent |
-| [aiml_discovery/agents/modeling_agent.py](../aiml_discovery/agents/modeling_agent.py) | Modeling Agent |
-| [aiml_discovery/agents/review_agent.py](../aiml_discovery/agents/review_agent.py) | Review Agent |
-| [aiml_discovery/agents/fine_tuning_agent.py](../aiml_discovery/agents/fine_tuning_agent.py) | Fine Tuning Agent |
-| [aiml_discovery/agents/researcher_agent.py](../aiml_discovery/agents/researcher_agent.py) | Researcher Agent |
-| [aiml_discovery/session_store.py](../aiml_discovery/session_store.py) | Session persistence (read/write/resume) |
-| [aiml_discovery/training.py](../aiml_discovery/training.py) | `train_automl` — the AutoML training backend |
+| `backend/logic/autopilot.py` | Public façade — session lifecycle, hook wiring, `_tee` streaming |
+| `backend/logic/agents/scientist.py` | Orchestrator LLM loop, `_delegate()`, tool dispatch |
+| `backend/logic/agents/base.py` | `AgentContext`, `AutopilotStep`, `BaseAgent`, `_fire`, `_invoke_llm` |
+| `backend/logic/agents/hooks.py` | `HookEvent`, `HookOutcome`, `Hook`, `HookManager` — hook framework |
+| `backend/logic/agents/hook_policies.py` | Built-in policies + `default_hook_manager()` |
+| `backend/logic/agents/eda_agent.py` | EDA Agent |
+| `backend/logic/agents/feature_engineering_agent.py` | Feature Engineering Agent |
+| `backend/logic/agents/modeling_agent.py` | Modeling Agent |
+| `backend/logic/agents/model_tester.py` | Model Tester Agent |
+| `backend/logic/agents/review_agent.py` | Review Agent |
+| `backend/logic/agents/fine_tuning_agent.py` | Fine Tuning Agent |
+| `backend/logic/agents/researcher_agent.py` | Researcher Agent |
+| `backend/logic/agents/drift_agent.py` | Drift Agent |
+| `backend/services/session_store.py` | Session persistence (read / write / resume) |
+| `backend/logic/training.py` | `train_automl` — AutoML training backend |
 
 ---
 
@@ -177,3 +238,4 @@ This report is displayed in the UI and persisted to `session.json`.
 | `OPENAI_API_BASE` | — | Azure OpenAI endpoint URL |
 | `AZURE_OPENAI_DEPLOYMENT` | `gpt-5.4` | Deployment name used by all agents |
 | `OPENAI_API_KEY` | — | API key (can also come from `.env`) |
+| `AIML_DISCOVERY_HOME` | `~/.aiml_discovery` | Root directory for project artifacts |
