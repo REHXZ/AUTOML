@@ -20,6 +20,8 @@ react-frontend/node_modules/
 react-frontend/dist/
 react-frontend/.npm-cache/
 react-frontend/*.tsbuildinfo
+landing/node_modules/
+landing/dist/
 .vercel
 *.db
 local.db

@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
-import "../styles/landing.css";
+import "./landing.css";
 import AutopilotShowcase from "./AutopilotShowcase";
+
+const APP_URL = import.meta.env.VITE_APP_URL || "#";
 
 const AGENTS = [
   { id: "01", icon: "psychology",    name: "Scientist",           desc: "Process Orchestration" },
@@ -19,11 +21,10 @@ const FEATURES = [
   { icon: "bolt",   text: "25+ Optimized Models" },
 ];
 
-export default function LandingPage({ onEnterApp }) {
+export default function LandingPage() {
   const rootRef = useRef(null);
 
   useEffect(() => {
-    // Inject Material Symbols font if not already present
     if (!document.getElementById("lp-material-symbols")) {
       const link = document.createElement("link");
       link.id = "lp-material-symbols";
@@ -33,13 +34,6 @@ export default function LandingPage({ onEnterApp }) {
       document.head.appendChild(link);
     }
 
-    // Allow scrolling while landing page is shown (app sets overflow:hidden)
-    const prevBodyOverflow = document.body.style.overflow;
-    const prevHtmlOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = "auto";
-    document.documentElement.style.overflow = "auto";
-
-    // Fade-in on scroll
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -54,11 +48,7 @@ export default function LandingPage({ onEnterApp }) {
 
     rootRef.current?.querySelectorAll(".lp-fade-in").forEach((el) => observer.observe(el));
 
-    return () => {
-      observer.disconnect();
-      document.body.style.overflow = prevBodyOverflow;
-      document.documentElement.style.overflow = prevHtmlOverflow;
-    };
+    return () => observer.disconnect();
   }, []);
 
   return (
@@ -80,9 +70,9 @@ export default function LandingPage({ onEnterApp }) {
 
           <div className="lp-header-actions">
             <a className="lp-btn-ghost" href="https://github.com/REHXZ/AUTOML" target="_blank" rel="noreferrer">GitHub</a>
-            <button className="lp-btn-primary" onClick={onEnterApp}>
+            <a className="lp-btn-primary" href={APP_URL}>
               Initialize Terminal
-            </button>
+            </a>
           </div>
 
           <button className="lp-hamburger" aria-label="Open menu">
