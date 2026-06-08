@@ -177,7 +177,7 @@ def stream_autopilot_events_api(project_id: str, session_id: str):
     from_index = max(0, request.args.get("from_index", 0, type=int))
     return Response(
         stream_with_context(
-            event_stream(str(store.root), project_id, session_id, from_index)
+            event_stream(project_id, session_id, from_index)
         ),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

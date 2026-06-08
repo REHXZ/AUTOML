@@ -3,6 +3,7 @@ from pathlib import Path
 from flask import Blueprint, abort, jsonify, request
 
 from backend.logic.ingestion import list_sqlite_tables, load_dataset
+from backend.server.auth import get_current_user_id
 from backend.server.helpers import project_or_404
 from backend.services.project_store import DatasetInfo, ProjectStore
 
@@ -11,16 +12,18 @@ datasets_bp = Blueprint("datasets", __name__)
 
 @datasets_bp.get("/api/projects/<project_id>/datasets")
 def list_datasets_api(project_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
     datasets = store.list_datasets(project_id)
     return jsonify({"project_id": project_id, "datasets": [d.to_dict() for d in datasets]})
 
 
 @datasets_bp.post("/api/projects/<project_id>/datasets/upload")
 def upload_dataset_api(project_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
 
     file = request.files.get("file")
     if file is None:
@@ -54,8 +57,9 @@ def upload_dataset_api(project_id: str):
 
 @datasets_bp.post("/api/projects/<project_id>/datasets/register")
 def register_dataset_api(project_id: str):
+    user_id = get_current_user_id()
     store = ProjectStore()
-    project_or_404(store, project_id)
+    project_or_404(store, project_id, user_id=user_id)
 
     body = request.get_json(silent=True) or {}
     file_path_str = (body.get("file_path") or "").strip()

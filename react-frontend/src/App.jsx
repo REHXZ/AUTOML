@@ -85,7 +85,7 @@ function loadTweaks() {
   }
 }
 
-export default function App() {
+export default function App({ user, onSignOut }) {
   const [providerConfig, setProviderConfigState] = useState(loadProviderConfig);
   const [serverProviders, setServerProviders] = useState(null);
 
@@ -540,6 +540,8 @@ export default function App() {
         }
         currentPage={currentPage}
         onPageChange={(page) => void handlePageChange(page)}
+        user={user}
+        onSignOut={onSignOut}
       />
 
       {error ? (

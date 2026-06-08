@@ -1,5 +1,15 @@
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
+let _authToken = null;
+
+export function setAuthToken(token) {
+  _authToken = token;
+}
+
+function authHeaders() {
+  return _authToken ? { Authorization: `Bearer ${_authToken}` } : {};
+}
+
 function apiUrl(path) {
   return `${API_BASE}${path}`;
 }
@@ -8,6 +18,7 @@ async function request(path, init) {
   const response = await fetch(apiUrl(path), {
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...(init?.headers ?? {})
     },
     ...init
@@ -66,6 +77,7 @@ export async function uploadDataset(projectId, { file, name = "", tableName = ""
     apiUrl(`/api/projects/${encodeURIComponent(projectId)}/datasets/upload`),
     {
       method: "POST",
+      headers: authHeaders(),
       body: form
     }
   );
@@ -126,7 +138,7 @@ export function deleteSession(projectId, sessionId) {
     apiUrl(
       `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}`
     ),
-    { method: "DELETE" }
+    { method: "DELETE", headers: authHeaders() }
   ).then(async (response) => {
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
@@ -172,9 +184,10 @@ export function notebookUrl(projectId, sessionId) {
 }
 
 export function connectSessionEvents(projectId, sessionId, fromIndex, handlers) {
+  const tokenParam = _authToken ? `&token=${encodeURIComponent(_authToken)}` : "";
   const source = new EventSource(
     apiUrl(
-      `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/events?from_index=${fromIndex}`
+      `/api/projects/${encodeURIComponent(projectId)}/autopilot/sessions/${encodeURIComponent(sessionId)}/events?from_index=${fromIndex}${tokenParam}`
     )
   );
 
@@ -224,7 +237,7 @@ export async function scoreRunWithFile(projectId, runId, file) {
   form.append("file", file);
   const response = await fetch(
     apiUrl(`/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/score`),
-    { method: "POST", body: form }
+    { method: "POST", headers: authHeaders(), body: form }
   );
   const text = await response.text();
   let payload = null;

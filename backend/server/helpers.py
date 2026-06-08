@@ -17,9 +17,9 @@ def project_payload(project: ProjectInfo) -> dict[str, Any]:
     return payload
 
 
-def project_or_404(store: ProjectStore, project_id: str) -> ProjectInfo:
+def project_or_404(store: ProjectStore, project_id: str, user_id: str | None = None) -> ProjectInfo:
     try:
-        return store.get_project(project_id)
+        return store.get_project(project_id, user_id=user_id)
     except FileNotFoundError as exc:
         abort(404, description=str(exc))
 
